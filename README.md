@@ -21,9 +21,8 @@ profile (v0.1)**.
 
 ## Status
 
-Pre-implementation. The locked design layer is in [`DESIGN.md`](./DESIGN.md); the plan,
-architecture decisions, and test contract live in the project's gstack artifacts. Read
-`DESIGN.md` before building.
+Pre-implementation. The locked design layer is in [`DESIGN.md`](./DESIGN.md) and the build
+tasks are in [`TODO.md`](./TODO.md). Read `DESIGN.md` before building.
 
 ## License
 

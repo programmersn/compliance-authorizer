@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Landing — hand-built (B direction)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Serif:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --serif:"IBM Plex Serif", Georgia, serif; --sans:"IBM Plex Sans", system-ui, sans-serif; --mono:"IBM Plex Mono", Consolas, monospace;
+    --paper:#F8F9F5; --ink:#15201a; --muted:#5d6b60; --rule:#cfd8cc;
+    --green:#14452F; --deny:#6E1F22; --ochre:#9C5A12; --ochre-band:#EFE6CE; --ochre-ink:#6f3d08;
+    --mono-bg:#EEF1E9; --ink-block:#161412;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:var(--sans);background:var(--paper);color:var(--ink);-webkit-font-smoothing:antialiased;line-height:1.5}
+  a{color:var(--green)}
+  /* top status bar */
+  .statusbar{background:var(--ink-block);color:#cfcabb;font-family:var(--mono);font-size:11px;letter-spacing:.04em;padding:7px 26px;display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px}
+  .statusbar .u{color:#e3b169}
+  /* nav */
+  .nav{max-width:1120px;margin:0 auto;padding:18px 26px;display:flex;justify-content:space-between;align-items:center}
+  .brand{font-family:var(--serif);font-weight:600;font-size:16px;color:var(--green);display:flex;align-items:center;gap:9px}
+  .brand .seal{width:22px;height:22px;border:1.5px solid var(--green);display:grid;place-items:center;font-size:11px;color:var(--green)}
+  .nav .links{display:flex;gap:22px;font-size:13.5px}
+  .nav .links a{color:var(--ink);text-decoration:none}
+  /* hero */
+  .hero{max-width:1120px;margin:0 auto;padding:30px 26px 18px;display:grid;grid-template-columns:1.15fr .85fr;gap:46px;align-items:center}
+  @media(max-width:880px){.hero{grid-template-columns:1fr;gap:30px}}
+  .hero h1{font-family:var(--serif);font-weight:600;font-size:38px;line-height:1.16;letter-spacing:-.01em;margin:0 0 6px}
+  .hero .rule{width:64px;height:3px;background:var(--green);margin:14px 0 16px}
+  .hero p.sub{font-size:16px;color:#3a463e;margin:0 0 22px;max-width:30em}
+  .cta{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+  .btn{font-family:var(--sans);font-size:14px;font-weight:600;padding:11px 20px;text-decoration:none;border:1.5px solid var(--green);display:inline-block}
+  .btn.primary{background:var(--green);color:#fff}
+  .btn.ghost{background:transparent;color:var(--green)}
+  .honest{font-size:12px;color:var(--muted);margin-top:14px;font-family:var(--mono)}
+  /* hero certificate */
+  .cert{background:#fff;border:1px solid var(--rule);position:relative}
+  .cert .band{background:repeating-linear-gradient(45deg,var(--ochre) 0 7px,#7d4a0e 7px 14px);padding:2.5px}
+  .cert .band i{display:block;background:var(--ochre-band);color:var(--ochre-ink);font-style:normal;text-align:center;font-size:10.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;padding:5px}
+  .cert .ch{padding:9px 14px;border-bottom:2px solid var(--green);display:flex;justify-content:space-between;align-items:center}
+  .cert .ch .t{font-family:var(--serif);font-weight:600;font-size:12.5px;color:var(--green)}
+  .cert .ch .id{font-family:var(--mono);font-size:9px;color:var(--muted)}
+  .cert .dec{background:var(--ink-block);color:#F4F1EA;padding:15px;display:flex;gap:12px;align-items:center}
+  .cert .dec .g{width:34px;height:34px;border:2px solid #F4F1EA;display:grid;place-items:center}
+  .cert .dec .g svg{width:19px;height:19px}
+  .cert .dec .dl{font-family:var(--serif);font-weight:600;font-size:25px;line-height:1}
+  .cert .dec .dr{font-size:11.5px;font-weight:600;margin-top:3px}
+  .cert .meta{padding:10px 14px;font-family:var(--mono);font-size:10px;color:var(--muted);display:flex;flex-direction:column;gap:3px}
+  .cert .meta .ok{color:var(--green);font-weight:600}
+  /* how it works flow */
+  .flow{max-width:1120px;margin:18px auto 0;padding:24px 26px;border-top:1px solid var(--rule);border-bottom:1px solid var(--rule)}
+  .flow h2{font-family:var(--serif);font-size:14px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin:0 0 16px;font-weight:600}
+  .steps{display:grid;grid-template-columns:1fr auto 1fr auto 1fr;gap:16px;align-items:center}
+  @media(max-width:880px){.steps{grid-template-columns:1fr}.arrow{display:none}}
+  .step .n{font-family:var(--mono);font-size:11px;color:var(--ochre-ink)}
+  .step h3{font-family:var(--serif);font-size:17px;margin:4px 0 4px}
+  .step p{font-size:13px;color:#3a463e;margin:0}
+  .arrow{color:var(--rule);font-size:22px;text-align:center}
+  /* projection */
+  .project{max-width:1120px;margin:0 auto;padding:18px 26px;font-size:13.5px;color:#3a463e}
+  .project b{color:var(--ink)}
+  /* dev door */
+  .dev{background:#fff;border-top:1px solid var(--rule)}
+  .devin{max-width:1120px;margin:0 auto;padding:26px;display:grid;grid-template-columns:1fr 1fr;gap:30px;align-items:center}
+  @media(max-width:880px){.devin{grid-template-columns:1fr}}
+  .dev h2{font-family:var(--serif);font-size:20px;margin:0 0 6px}
+  .dev p{font-size:13.5px;color:#3a463e;margin:0 0 12px}
+  .dev .links2{display:flex;gap:20px;font-size:13px;flex-wrap:wrap}
+  .codeblk{font-family:var(--mono);font-size:12px;background:var(--ink-block);color:#e7e1d4;padding:14px 15px;line-height:1.7;overflow:auto}
+  .codeblk .c{color:#7f8c80}
+  .codeblk .g{color:#7fd1a0}
+  /* footer meta strip */
+  .fstrip{background:var(--ink-block);color:#a8a293;font-family:var(--mono);font-size:11px;letter-spacing:.04em;padding:11px 26px;display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px}
+  .fstrip .u{color:#e3b169}
+</style>
+</head>
+<body>
+  <div class="statusbar">
+    <span>RUNTIME COMPLIANCE AUTHORIZATION · SHARIAH PROFILE v0.1</span>
+    <span class="u">● UNCERTIFIED SYNTHETIC DEMO — NOT A FATWA</span>
+  </div>
+  <nav class="nav">
+    <div class="brand"><span class="seal">۞</span> Runtime Compliance Authorization</div>
+    <div class="links"><a href="#how">How it works</a><a href="#verify">Verify</a><a href="#dev">For developers</a><a href="#">GitHub ↗</a></div>
+  </nav>
+
+  <header class="hero">
+    <div>
+      <h1>See exactly why an AI agent's payment was allowed, denied, or held.</h1>
+      <div class="rule"></div>
+      <p class="sub">A runtime authorization API that returns a cited, tamper-evident decision your Shariah committee can read — and that anyone can verify offline, trusting nothing on our server.</p>
+      <div class="cta">
+        <a class="btn primary" href="#">Try a decision</a>
+        <a class="btn ghost" href="#">View signed evidence</a>
+      </div>
+      <div class="honest">synthetic demo · uncertified · not a fatwa · not production advice</div>
+    </div>
+    <aside class="cert" aria-label="Example signed decision">
+      <div class="band"><i>Uncertified — synthetic demo rule pack</i></div>
+      <div class="ch"><span class="t">Decision · Evidence Record</span><span class="id">ev-7f3c8a21</span></div>
+      <div class="dec">
+        <div class="g"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><circle cx="12" cy="12" r="9"/><line x1="6.4" y1="6.4" x2="17.6" y2="17.6"/></svg></div>
+        <div><div class="dl">DENY</div><div class="dr">MAYSIR — gambling</div></div>
+      </div>
+      <div class="meta">
+        <span>rule-maysir-01 · shariah-v0.1 · 0.1.3</span>
+        <span>sha256:9b2f7c…a14e</span>
+        <span class="ok">✓ signature valid · ✓ hash matches · ✓ replay OK</span>
+      </div>
+    </aside>
+  </header>
+
+  <section class="flow" id="how">
+    <h2>One runtime decision, three steps</h2>
+    <div class="steps">
+      <div class="step"><div class="n">01</div><h3>Payment intent</h3><p>An agent presents a synthetic intent — merchant, MCC, amount, credential.</p></div>
+      <div class="arrow">→</div>
+      <div class="step"><div class="n">02</div><h3>Rule pack evaluates</h3><p>A versioned, hashed Shariah rule pack decides — deterministically, no LLM.</p></div>
+      <div class="arrow">→</div>
+      <div class="step"><div class="n">03</div><h3>Signed decision + evidence</h3><p>An Ed25519-signed envelope: allow / deny / review, cited and replayable.</p></div>
+    </div>
+  </section>
+
+  <p class="project" id="verify"><b>This demo runs an uncertified synthetic rule pack.</b> It shows the exact evidence shape a certified v1.0 produces — the AAOIFI citation and scholar signature populate on certification. Every decision is verifiable offline, so you trust the math, not us.</p>
+
+  <section class="dev" id="dev">
+    <div class="devin">
+      <div>
+        <h2>For developers &amp; bank validators</h2>
+        <p>One command to a signed decision. Reproduce any envelope offline, trusting nothing on our server. MIT-licensed, OpenAPI-documented, agent-native by construction.</p>
+        <div class="links2"><a href="#">MIT on GitHub ↗</a><a href="#">Verify offline (REPRODUCIBILITY.md) ↗</a><a href="#">OpenAPI reference ↗</a></div>
+      </div>
+      <div class="codeblk"><span class="c"># a decision is always 200 — read the body (a DENY is 200, not an error)</span><br><span class="c"># malformed input → 4xx problem+json, never a signed decision</span><br>$ curl -s api/authorize -d @casino-hotel.json<br><span class="g">{ "decision": "deny", "reason_codes": ["MAYSIR"],</span><br><span class="g">&nbsp;&nbsp;"rule_pack_hash": "sha256:9b2f7c…", … }</span><br><br>$ npm run verify:fixture ev-7f3c8a21.json<br><span class="g">✓ signature valid &nbsp;✓ hash matches &nbsp;✓ replay OK</span></div>
+    </div>
+  </section>
+
+  <div class="fstrip">
+    <span>ENGINE authorize-core · VERSION 0.1.3 · RULESET shariah-v0.1 · LICENSE MIT</span>
+    <span class="u">JURISDICTION demo · UNCERTIFIED · committee-reviewable demo evidence</span>
+  </div>
+</body>
+</html>

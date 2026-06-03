@@ -6,11 +6,9 @@ D1-D12. **Every W3-4 design surface calibrates against this file.** When agentic
 any surface, load this first; it exists so the build does not reinvent a generic look
 each session.
 
-Approved visual references (hand-built HTML, not AI images):
-- Evidence viewer: `~/.gstack/projects/agentic-payment-ideas/designs/evidence-viewer-chosen.html`
-- Landing: `~/.gstack/projects/agentic-payment-ideas/designs/landing-mockup.html`
-- Palette exploration (3-up): `…/designs/evidence-viewer-mockup.html`
-- Landing direction scouting (AI PNGs, reference-only, do NOT ship): `.gstack/landing-ai-pngs/`
+Approved visual references (hand-built HTML — the literal build targets):
+- Evidence viewer: `design/evidence-viewer-chosen.html`
+- Landing: `design/landing-mockup.html`
 
 ---
 
@@ -211,7 +209,7 @@ of the ZeroH GB2604344.8 masking/selective-disclosure patent).
 
 **Public-content discipline (IT-05 / F-3.A) — binding on every public surface.** NO named
 bank or scholar appears in the landing, playground scenarios, demo video, screenshots, or
-README. The source use cases UC1-3 carry prospect names (Nomo, Wahed, Insha) as INTERNAL spec
+README. The source use cases UC1-3 carry specific prospect-bank names as INTERNAL spec
 only — public scenario labels and the demo-video script MUST use generic descriptors
 ("agent books a casino-hotel", "agent rebalances a mixed-revenue ETF", "agent sets up a
 subscription"). This is an explicit T-D8 copy-guard check (a name leak from UC1-3 is the
