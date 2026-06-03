@@ -1,7 +1,8 @@
 # TODO — compliance-authorizer build
 
-Build tasks for the W1-W4 prototype. Design spec: [`DESIGN.md`](./DESIGN.md). Strategy,
-outreach, and research planning live in the private project vault, not here.
+Build tasks for the W1-W4 prototype — **build scope only**. Design spec: [`DESIGN.md`](./DESIGN.md).
+Strategy, outreach, and research planning live in the project's private workspace, not here;
+the `T-D*` task IDs trace to the private planning records.
 
 ## W1 — crypto/API core (the gate; build synchronously)
 - [ ] `POST /authorize` → Ed25519 JWS-compact signed evidence envelope
