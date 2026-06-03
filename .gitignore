@@ -1,3 +1,6 @@
+# Private local context (machine-local, never commit)
+CLAUDE.local.md
+
 # Dependencies / build
 node_modules/
 dist/
