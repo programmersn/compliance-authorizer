@@ -12,6 +12,7 @@ coverage/
 .env.local
 *.key
 *.pem
+.keys/
 
 # Editor / OS
 .DS_Store

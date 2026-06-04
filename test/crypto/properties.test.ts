@@ -1,0 +1,197 @@
+/**
+ * Property-based tests (ET12, fast-check): the two independent JCS
+ * implementations must agree on arbitrary JSON, hashing must be key-order
+ * invariant, and EVERY synthetic intent must produce evidence the standalone
+ * verifier accepts.
+ */
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import fc from "fast-check";
+import { describe, expect, it } from "vitest";
+import { canonicalize } from "../../src/crypto/canonicalize.ts";
+import { sha256Hex } from "../../src/crypto/hash.ts";
+import { buildJwks, generateSigningKey } from "../../src/crypto/keys.ts";
+import {
+  buildEnvelope,
+  signEnvelope,
+  type EnvelopeDeps,
+} from "../../src/evidence/envelope.ts";
+import { evaluate } from "../../src/rules/evaluator.ts";
+import { loadRulePack } from "../../src/rules/loader.ts";
+import { jcsCanonicalize, verifyEvidence } from "../../verifier/verify.mjs";
+
+const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
+const packText = readFileSync(
+  join(repoRoot, "rule-packs", "shariah", "0.1.0.json"),
+  "utf8",
+);
+const loadedPack = loadRulePack(packText);
+const packDocument: unknown = JSON.parse(packText);
+
+/**
+ * Deep key-order shuffle: rebuild every object with reversed key insertion
+ * order. Built on null-prototype objects so a generated "__proto__" key stays
+ * an own property instead of silently setting the prototype.
+ */
+function reverseKeyOrder(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(reverseKeyOrder);
+  if (value !== null && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    const result = Object.create(null) as Record<string, unknown>;
+    for (const key of Object.keys(record).reverse()) {
+      result[key] = reverseKeyOrder(record[key]);
+    }
+    return result;
+  }
+  return value;
+}
+
+describe("dual JCS implementations agree (sign-side TS vs verifier-side JS)", () => {
+  it("canonicalize === jcsCanonicalize for arbitrary JSON values", () => {
+    fc.assert(
+      fc.property(fc.jsonValue(), (value) => {
+        expect(canonicalize(value)).toBe(jcsCanonicalize(value));
+      }),
+      { numRuns: 500 },
+    );
+  });
+
+  it("canonical form is invariant under key reordering (both implementations)", () => {
+    fc.assert(
+      fc.property(fc.jsonValue(), (value) => {
+        const shuffled = reverseKeyOrder(value);
+        expect(canonicalize(shuffled)).toBe(canonicalize(value));
+        expect(jcsCanonicalize(shuffled)).toBe(jcsCanonicalize(value));
+      }),
+      { numRuns: 300 },
+    );
+  });
+
+  it("canonical form is invariant under pretty-print round-trips", () => {
+    fc.assert(
+      fc.property(fc.jsonValue(), (value) => {
+        const reparsed: unknown = JSON.parse(JSON.stringify(value, null, 3));
+        expect(canonicalize(reparsed)).toBe(canonicalize(value));
+      }),
+      { numRuns: 300 },
+    );
+  });
+
+  it("therefore: sha256(JCS(x)) is key-order and whitespace independent", () => {
+    fc.assert(
+      fc.property(fc.jsonValue(), (value) => {
+        const viaShuffle = sha256Hex(canonicalize(reverseKeyOrder(value)));
+        const viaPretty = sha256Hex(
+          canonicalize(JSON.parse(JSON.stringify(value, null, 2))),
+        );
+        expect(viaShuffle).toBe(sha256Hex(canonicalize(value)));
+        expect(viaPretty).toBe(sha256Hex(canonicalize(value)));
+      }),
+      { numRuns: 200 },
+    );
+  });
+});
+
+// --- synthetic intent arbitrary (SYNTHETIC DATA ONLY — generic tokens) -----
+
+const attributeToken = fc.constantFrom(
+  "gambling",
+  "casino",
+  "alcohol",
+  "interest-bearing-credit",
+  "speculative-derivatives",
+  "family-friendly",
+  "retail",
+);
+
+const intentArbitrary = fc.record(
+  {
+    profile: fc.constant("shariah-v0.1"),
+    merchant: fc.record(
+      {
+        name: fc.constantFrom(
+          "synthetic-merchant-a",
+          "synthetic-merchant-b",
+          "casino-hotel",
+          "mixed-revenue-etf",
+          "subscription-service",
+        ),
+        mcc: fc
+          .integer({ min: 0, max: 9999 })
+          .map((n) => String(n).padStart(4, "0")),
+        attributes: fc.uniqueArray(attributeToken, { maxLength: 4 }),
+      },
+      { requiredKeys: ["name", "mcc"] },
+    ),
+    amount: fc.record({
+      value: fc
+        .double({ min: 0, max: 1_000_000, noNaN: true, noDefaultInfinity: true })
+        .map((n) => Math.round(n * 100) / 100),
+      currency: fc.constantFrom("EUR", "USD", "GBP", "AED"),
+    }),
+    recurring: fc.boolean(),
+    screening: fc.record(
+      {
+        mixed_revenue_ratio: fc
+          .double({ min: 0, max: 1, noNaN: true })
+          .map((n) => Math.round(n * 1000) / 1000),
+      },
+      { requiredKeys: [] },
+    ),
+  },
+  { requiredKeys: ["profile", "merchant", "amount"] },
+);
+
+const fixedDeps: EnvelopeDeps = {
+  now: () => new Date("2026-06-04T12:00:00.000Z"),
+  uuid: () => "00000000-0000-4000-8000-000000000000",
+};
+
+describe("for-all synthetic intents: evidence signs and offline-verifies", () => {
+  const key = generateSigningKey();
+  const jwks = buildJwks([key.publicJwk]);
+
+  it("sign → standalone offline verify passes for every generated intent", () => {
+    fc.assert(
+      fc.property(intentArbitrary, (intent) => {
+        const evaluation = evaluate(intent, loadedPack.pack);
+        expect(["allow", "review", "deny"]).toContain(evaluation.decision);
+
+        const envelope = buildEnvelope(intent, evaluation, loadedPack, fixedDeps);
+        const jws = signEnvelope(envelope, key);
+        const result = verifyEvidence({ jws, jwks, pack: packDocument });
+        expect(result.ok).toBe(true);
+        expect(result.envelope?.["decision"]).toBe(evaluation.decision);
+        expect(result.envelope?.["intent_hash"]).toBe(
+          sha256Hex(jcsCanonicalize(intent)),
+        );
+      }),
+      { numRuns: 150 },
+    );
+  });
+
+  it("decisions are deterministic: evaluating twice yields deep-equal results", () => {
+    fc.assert(
+      fc.property(intentArbitrary, (intent) => {
+        expect(evaluate(intent, loadedPack.pack)).toEqual(
+          evaluate(intent, loadedPack.pack),
+        );
+      }),
+      { numRuns: 150 },
+    );
+  });
+
+  it('any intent whose attributes include "gambling" is denied with MAYSIR', () => {
+    fc.assert(
+      fc.property(intentArbitrary, (intent) => {
+        const attributes = intent.merchant.attributes ?? [];
+        fc.pre(attributes.includes("gambling"));
+        const evaluation = evaluate(intent, loadedPack.pack);
+        expect(evaluation.decision).toBe("deny");
+        expect(evaluation.reason_codes).toContain("MAYSIR");
+      }),
+      { numRuns: 80 },
+    );
+  });
+});
