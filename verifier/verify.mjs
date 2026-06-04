@@ -63,6 +63,36 @@ const sha256Hex = (/** @type {string|Buffer} */ data) =>
 
 const b64urlDecode = (/** @type {string} */ text) => Buffer.from(text, "base64url");
 
+// did:key encoding of the VERIFYING key (multicodec ed25519-pub 0xed01,
+// multibase base58btc) — printed so the operator can compare the fingerprint
+// against the issuer's out-of-band published did:key. A signature verifier can
+// only prove consistency with the JWKS it is handed; WHICH issuer that JWKS
+// belongs to is established by this fingerprint comparison.
+const BASE58_ALPHABET =
+  "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+
+/** @param {Buffer} bytes @returns {string} */
+function base58btcEncode(bytes) {
+  let n = 0n;
+  for (const byte of bytes) n = n * 256n + BigInt(byte);
+  let out = "";
+  while (n > 0n) {
+    out = BASE58_ALPHABET[Number(n % 58n)] + out;
+    n /= 58n;
+  }
+  for (const byte of bytes) {
+    if (byte !== 0) break;
+    out = "1" + out;
+  }
+  return out;
+}
+
+/** @param {string} x base64url raw Ed25519 public key @returns {string} */
+function didKeyFromJwkX(x) {
+  const raw = b64urlDecode(x);
+  return `did:key:z${base58btcEncode(Buffer.concat([Buffer.from([0xed, 0x01]), raw]))}`;
+}
+
 // ---------------------------------------------------------------------------
 // Verification checks. Each returns {id, title, ok, detail}.
 // ---------------------------------------------------------------------------
@@ -74,14 +104,16 @@ const DECISIONS = new Set(["allow", "review", "deny"]);
  * rule pack it cites). Pure function over the provided documents — no I/O.
  *
  * @param {{ jws: string, jwks: { keys?: unknown[] }, pack?: unknown }} input
- * @returns {{ ok: boolean, checks: Array<{id: string, title: string, ok: boolean, detail: string}>, envelope: Record<string, unknown> | null }}
+ * @returns {{ ok: boolean, checks: Array<{id: string, title: string, ok: boolean, detail: string}>, envelope: Record<string, unknown> | null, issuer: { kid: string, did: string } | null }}
  */
 export function verifyEvidence({ jws, jwks, pack }) {
   /** @type {Array<{id: string, title: string, ok: boolean, detail: string}>} */
   const checks = [];
+  /** @type {{ kid: string, did: string } | null} */
+  let issuer = null;
   const fail = (id, title, detail) => {
     checks.push({ id, title, ok: false, detail });
-    return { ok: false, checks, envelope: null };
+    return { ok: false, checks, envelope: null, issuer };
   };
   const pass = (id, title, detail) => checks.push({ id, title, ok: true, detail });
 
@@ -128,6 +160,7 @@ export function verifyEvidence({ jws, jwks, pack }) {
     return fail("key-resolution", "Issuer key resolution",
       "JWKS kid does not match the key's RFC 7638 thumbprint — key material may have been swapped");
   }
+  issuer = { kid: jwk.kid, did: didKeyFromJwkX(jwk.x) };
   pass("key-resolution", "Issuer key resolution", `kid resolves to an Ed25519 key; RFC 7638 thumbprint matches`);
 
   // 4. Signature
@@ -205,7 +238,7 @@ export function verifyEvidence({ jws, jwks, pack }) {
     pass("pack-hash", "rule_pack_hash recomputation", "sha256(JCS(pack)) matches; id/version/evaluator_version consistent");
   }
 
-  return { ok: true, checks, envelope };
+  return { ok: true, checks, envelope, issuer };
 }
 
 // ---------------------------------------------------------------------------
@@ -247,6 +280,13 @@ function main() {
     console.log(`RESULT: PASS — decision "${env.decision}" (${JSON.stringify(env.reason_codes)})`);
     console.log(`  rule pack:  ${env.rule_pack_id}@${env.rule_pack_version} (${env.rule_pack_hash})`);
     console.log(`  evaluator:  ${env.evaluator_version}   intent_hash: ${env.intent_hash}`);
+    if (result.issuer) {
+      console.log(`  signed by:  kid ${result.issuer.kid}`);
+      console.log(`              ${result.issuer.did}`);
+      console.log(`  TRUST ANCHOR: a verifier proves consistency with the JWKS you hand it.`);
+      console.log(`  Confirm this did:key fingerprint against the issuer's published key`);
+      console.log(`  (obtained out-of-band) before treating the evidence as theirs.`);
+    }
     console.log(`  NOTE: UNCERTIFIED — synthetic demo rule pack; not a fatwa / not certified / not production advice.`);
     process.exit(0);
   }

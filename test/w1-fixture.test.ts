@@ -86,6 +86,10 @@ describe("W1 gate: sign → offline-verify round-trip", () => {
     expect(stdout).toContain("RESULT: PASS");
     expect(stdout).toContain('decision "deny"');
     expect(stdout).toContain("UNCERTIFIED"); // honesty signal survives into the CLI
+    // Trust anchor: the CLI prints the verifying key's fingerprint for
+    // out-of-band comparison against the issuer's published did:key.
+    expect(stdout).toContain(signingKey.did);
+    expect(stdout).toContain("TRUST ANCHOR");
     expect(status).toBe(0);
   });
 

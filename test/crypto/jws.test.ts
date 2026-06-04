@@ -237,6 +237,15 @@ describe("negative-alg matrix — real attacks, all rejected", () => {
 });
 
 describe("did:key encoding", () => {
+  it("the standalone verifier reports the SAME issuer did:key fingerprint (independent encoder)", () => {
+    const key = generateSigningKey();
+    const jws = signCompact(samplePayload(), key);
+    const result = verifyEvidence({ jws, jwks: buildJwks([key.publicJwk]) });
+    // verifyEvidence fails later checks (payload is not a full envelope), but
+    // key resolution succeeded — the issuer fingerprint must already be set.
+    expect(result.issuer).toEqual({ kid: key.kid, did: key.did });
+  });
+
   it("round-trips raw Ed25519 public keys through did:key", () => {
     const key = generateSigningKey();
     const raw = new Uint8Array(Buffer.from(key.publicJwk.x, "base64url"));

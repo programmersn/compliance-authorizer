@@ -14,6 +14,8 @@ export interface VerificationResult {
   ok: boolean;
   checks: VerificationCheck[];
   envelope: Record<string, unknown> | null;
+  /** kid + did:key of the key that verified — compare against the issuer's published fingerprint. */
+  issuer: { kid: string; did: string } | null;
 }
 
 export function jcsCanonicalize(value: unknown): string;
