@@ -14,7 +14,7 @@ import {
   loadRulePack,
   loadRulePackFile,
 } from "../../src/rules/loader.ts";
-import type { RulePack } from "../../src/rules/pack-schema.ts";
+import type { Condition, RulePack } from "../../src/rules/pack-schema.ts";
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const packPath = join(repoRoot, "rule-packs", "shariah", "0.1.0.json");
@@ -175,6 +175,25 @@ describe("conflict precedence is DATA from the pack, not engine code", () => {
 });
 
 describe("closed-grammar semantics (missing fields, strictness)", () => {
+  // A pack whose single deny rule carries one condition — so a flipped operator
+  // or absent-field behavior can never ship silently. `id` defaults to TEST-OP;
+  // callers that assert on matched_rules pass an explicit id.
+  const singleRulePack = (condition: Condition, id = "TEST-OP"): RulePack => {
+    const pack: RulePack = structuredClone(loaded.pack);
+    pack.rules = [
+      {
+        id,
+        reason_code: "MAYSIR",
+        decision: "deny",
+        title: "test",
+        description: "test",
+        all_of: [condition],
+        standards_ref: { status: "pending", note: "test" },
+      },
+    ];
+    return pack;
+  };
+
   it("conditions on absent fields are false — absence never passes a screen", () => {
     // No screening object at all → the gte rule cannot match.
     const result = evaluate(intent(), loaded.pack);
@@ -182,20 +201,40 @@ describe("closed-grammar semantics (missing fields, strictness)", () => {
   });
 
   it("not_in on an absent field is FALSE, not true", () => {
-    const miniPack: RulePack = structuredClone(loaded.pack);
-    miniPack.rules = [
-      {
-        id: "TEST-NOT-IN",
-        reason_code: "MAYSIR",
-        decision: "deny",
-        title: "test",
-        description: "test",
-        all_of: [{ field: "merchant.category_label", op: "not_in", value: ["safe"] }],
-        standards_ref: { status: "pending", note: "test" },
-      },
-    ];
+    const miniPack = singleRulePack(
+      { field: "merchant.category_label", op: "not_in", value: ["safe"] },
+      "TEST-NOT-IN",
+    );
     const result = evaluate(intent(), miniPack);
     expect(result.decision).toBe("allow"); // rule did NOT match
+  });
+
+  it("not_in is TRUE when a present field's value is NOT in the list (deny fires)", () => {
+    const miniPack = singleRulePack(
+      { field: "merchant.mcc", op: "not_in", value: ["5411", "5412"] },
+      "TEST-NOT-IN-TRUE",
+    );
+    // mcc "7011" is present and NOT in the list → condition true → rule matches.
+    const result = evaluate(
+      intent({ merchant: { name: "m", mcc: "7011", attributes: [] } }),
+      miniPack,
+    );
+    expect(result.decision).toBe("deny");
+    expect(result.matched_rules.map((rule) => rule.rule_id)).toEqual(["TEST-NOT-IN-TRUE"]);
+  });
+
+  it("not_in is FALSE when a present field's value IS in the list (no match)", () => {
+    const miniPack = singleRulePack(
+      { field: "merchant.mcc", op: "not_in", value: ["5411", "7011"] },
+      "TEST-NOT-IN-FALSE",
+    );
+    // mcc "7011" IS in the list → condition false → rule does NOT match.
+    const result = evaluate(
+      intent({ merchant: { name: "m", mcc: "7011", attributes: [] } }),
+      miniPack,
+    );
+    expect(result.decision).toBe("allow");
+    expect(result.matched_rules).toEqual([]);
   });
 
   it("no type coercion: a numeric mcc never matches a string rule value", () => {
@@ -204,6 +243,79 @@ describe("closed-grammar semantics (missing fields, strictness)", () => {
       loaded.pack,
     );
     expect(result.decision).toBe("allow"); // 7995 !== "7995" — strict
+  });
+
+  it('inherited prototype members are NOT intent fields: exists on "constructor" / "__proto__" is false', () => {
+    // Both names pass the schema's field pattern, and a naive property lookup
+    // would resolve them via the prototype chain — diverging from the pinned
+    // semantics doc (§2: own data fields only). They must read as ABSENT.
+    const miniPack: RulePack = structuredClone(loaded.pack);
+    miniPack.rules = [
+      {
+        id: "TEST-PROTO-1",
+        reason_code: "MAYSIR",
+        decision: "deny",
+        title: "test",
+        description: "test",
+        all_of: [{ field: "constructor", op: "exists" }],
+        standards_ref: { status: "pending", note: "test" },
+      },
+      {
+        id: "TEST-PROTO-2",
+        reason_code: "MAYSIR",
+        decision: "deny",
+        title: "test",
+        description: "test",
+        all_of: [{ field: "merchant.__proto__", op: "exists" }],
+        standards_ref: { status: "pending", note: "test" },
+      },
+    ];
+    const result = evaluate(intent(), miniPack);
+    expect(result.decision).toBe("allow"); // neither rule matched
+    expect(result.matched_rules).toEqual([]);
+  });
+
+  // The remaining §3 operator rows — lte / equals / exists — exercised via
+  // single-rule packs (singleRulePack, hoisted above) so a flipped comparison
+  // can never ship silently.
+  it("lte holds at and below the boundary, not above", () => {
+    const pack = singleRulePack({
+      field: "screening.mixed_revenue_ratio",
+      op: "lte",
+      value: 0.05,
+    });
+    expect(
+      evaluate(intent({ screening: { mixed_revenue_ratio: 0.05 } }), pack).decision,
+    ).toBe("deny");
+    expect(
+      evaluate(intent({ screening: { mixed_revenue_ratio: 0.049 } }), pack).decision,
+    ).toBe("deny");
+    expect(
+      evaluate(intent({ screening: { mixed_revenue_ratio: 0.051 } }), pack).decision,
+    ).toBe("allow");
+  });
+
+  it("equals matches exactly one primitive value, with no near-miss", () => {
+    const pack = singleRulePack({ field: "merchant.mcc", op: "equals", value: "7995" });
+    expect(
+      evaluate(intent({ merchant: { name: "m", mcc: "7995", attributes: [] } }), pack)
+        .decision,
+    ).toBe("deny");
+    expect(
+      evaluate(intent({ merchant: { name: "m", mcc: "7996", attributes: [] } }), pack)
+        .decision,
+    ).toBe("allow");
+  });
+
+  it("exists is true for a present field (even a falsy 0) and false when absent", () => {
+    const pack = singleRulePack({
+      field: "screening.mixed_revenue_ratio",
+      op: "exists",
+    });
+    expect(
+      evaluate(intent({ screening: { mixed_revenue_ratio: 0 } }), pack).decision,
+    ).toBe("deny");
+    expect(evaluate(intent(), pack).decision).toBe("allow");
   });
 });
 
@@ -261,5 +373,40 @@ describe("loader refusal matrix (a bad pack never loads)", () => {
     const pack = parsedPack();
     pack["llm_fallback"] = true;
     expect(() => loadRulePack(JSON.stringify(pack))).toThrow(RulePackError);
+  });
+
+  it("wraps a JSON syntax error as a RulePackError that preserves the underlying cause", () => {
+    // A malformed pack file is a boot failure — the original parse error must
+    // survive on .cause so an operator can see WHERE the JSON broke.
+    let caught: unknown;
+    try {
+      loadRulePack("{ not valid json");
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(RulePackError);
+    expect((caught as RulePackError).cause).toBeInstanceOf(SyntaxError);
+  });
+
+  it('rejects an "in" condition whose value array is empty', () => {
+    const pack = parsedPack();
+    const rules = pack["rules"] as { all_of: { op: string; value: unknown }[] }[];
+    const inRule = rules.find((rule) => rule.all_of[0]!.op === "in");
+    inRule!.all_of[0]!.value = [];
+    expect(() => loadRulePack(JSON.stringify(pack))).toThrow(RulePackError);
+    expect(() => loadRulePack(JSON.stringify(pack))).toThrow(/non-empty array of primitives/);
+  });
+
+  it('rejects a "not_in" condition whose value array holds a non-primitive element', () => {
+    const pack = parsedPack();
+    const rules = pack["rules"] as { all_of: { op: string; value: unknown }[] }[];
+    // Repoint an existing rule's first condition to not_in with an object element.
+    rules[0]!.all_of[0] = {
+      ...{ field: "merchant.mcc" },
+      op: "not_in",
+      value: ["7995", { nested: "object" }],
+    };
+    expect(() => loadRulePack(JSON.stringify(pack))).toThrow(RulePackError);
+    expect(() => loadRulePack(JSON.stringify(pack))).toThrow(/non-empty array of primitives/);
   });
 });

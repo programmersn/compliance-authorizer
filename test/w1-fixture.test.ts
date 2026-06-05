@@ -12,8 +12,12 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { buildJwks, generateSigningKey } from "../src/crypto/keys.ts";
+import { buildEnvelope, signEnvelope } from "../src/evidence/envelope.ts";
+import { evaluate } from "../src/rules/evaluator.ts";
 import { loadRulePackFile } from "../src/rules/loader.ts";
 import { buildServer } from "../src/server.ts";
+import { verifyEvidence } from "../verifier/verify.mjs";
+import { fixedEnvelopeDeps } from "./fixtures/deps.ts";
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const verifierPath = join(repoRoot, "verifier", "verify.mjs");
@@ -90,6 +94,8 @@ describe("W1 gate: sign → offline-verify round-trip", () => {
     // out-of-band comparison against the issuer's published did:key.
     expect(stdout).toContain(signingKey.did);
     expect(stdout).toContain("TRUST ANCHOR");
+    // Honesty scope line: PASS = authenticity/integrity, not decision replay.
+    expect(stdout).toContain("does NOT re-run the rule evaluator");
     expect(status).toBe(0);
   });
 
@@ -173,6 +179,92 @@ describe("W1 gate: sign → offline-verify round-trip", () => {
     ]);
     expect(stdout).toContain("RESULT: FAIL");
     expect(status).toBe(1);
+  });
+});
+
+describe("verifier pack-consistency sub-branches (id/version + the D12 evaluator seam)", () => {
+  // These two branches sit AFTER the signature, canonical-form and intent-hash
+  // checks, so they are only reachable with a genuinely-signed, canonical
+  // envelope whose rule_pack_hash matches the supplied pack. We build a correct
+  // envelope, mutate exactly ONE cited field, and RE-SIGN — so the earlier
+  // checks all pass and the pack-hash check is the first (and only) failure.
+  // rule_pack_hash itself stays the real pack's hash (it hashes the PACK, not
+  // the envelope), so the hash sub-branch passes and a later sub-branch fires.
+  const signEnvelopeWithField = (overrides: Record<string, unknown>): string => {
+    const evaluation = evaluate(casinoHotelIntent, loadedPack.pack);
+    const envelope = buildEnvelope(
+      casinoHotelIntent,
+      evaluation,
+      loadedPack,
+      fixedEnvelopeDeps,
+    );
+    return signEnvelope({ ...envelope, ...overrides }, signingKey);
+  };
+
+  it("FAILS at pack-hash when rule_pack_id disagrees with the (correctly-hashed) pack", () => {
+    const jws = signEnvelopeWithField({ rule_pack_id: "not-the-shariah-pack" });
+    const result = verifyEvidence({
+      jws,
+      jwks: buildJwks([signingKey.publicJwk]),
+      pack: loadedPack.pack,
+    });
+    expect(result.ok).toBe(false);
+    const check = result.checks.find((c) => c.id === "pack-hash");
+    expect(check?.ok).toBe(false);
+    // The hash sub-branch passed; the id/version sub-branch is what caught it.
+    expect(check?.detail).toContain("id/version");
+  });
+
+  it("FAILS at the D12 seam when evaluator_version disagrees with the pack's required_evaluator_version", () => {
+    // The certification-invalidating case: a hash-matching pack whose pinned
+    // evaluator semantics differ from the evaluator that produced the envelope.
+    const jws = signEnvelopeWithField({ evaluator_version: "0.9.9" });
+    const result = verifyEvidence({
+      jws,
+      jwks: buildJwks([signingKey.publicJwk]),
+      pack: loadedPack.pack,
+    });
+    expect(result.ok).toBe(false);
+    const check = result.checks.find((c) => c.id === "pack-hash");
+    expect(check?.ok).toBe(false);
+    expect(check?.detail).toContain("evaluator_version");
+    expect(check?.detail).toContain("D12 seam");
+    // Everything before pack-hash must have PASSED — otherwise we'd be asserting
+    // reachability of the wrong branch (a green-but-meaningless test).
+    expect(result.checks.find((c) => c.id === "signature")?.ok).toBe(true);
+    expect(result.checks.find((c) => c.id === "intent-hash")?.ok).toBe(true);
+  });
+});
+
+describe("verifier input errors are operator errors, never verification verdicts", () => {
+  it("exits 2 (not 1) with INPUT ERROR when the evidence file is missing", () => {
+    const { status, stdout } = runVerifier([
+      "--evidence", join(workDir, "does-not-exist.jws"),
+      "--jwks", jwksPath,
+    ]);
+    expect(status).toBe(2);
+    expect(stdout).toContain("INPUT ERROR");
+    expect(stdout).not.toContain("RESULT: FAIL");
+  });
+
+  it("exits 2 (not 1) when the JWKS file is not valid JSON", () => {
+    const badJwksPath = join(workDir, "bad-jwks.json");
+    writeFileSync(badJwksPath, "{ not json", "utf8");
+    const { status, stdout } = runVerifier([
+      "--evidence", evidencePath,
+      "--jwks", badJwksPath,
+    ]);
+    expect(status).toBe(2);
+    expect(stdout).toContain("INPUT ERROR");
+  });
+
+  it("exits 2 with a usage message when invoked with no arguments", () => {
+    // Missing required --evidence/--jwks is an OPERATOR error (exit 2), printed
+    // before anything is verified — never exit 1 (a verification verdict).
+    const { status, stdout } = runVerifier([]);
+    expect(status).toBe(2);
+    expect(stdout).toContain("usage:");
+    expect(stdout).not.toContain("RESULT:");
   });
 });
 

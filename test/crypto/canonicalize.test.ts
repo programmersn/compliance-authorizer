@@ -125,4 +125,13 @@ describe("strictness — hash inputs are never guessed", () => {
     value["a"] = 1;
     expect(canonicalize(value)).toBe('{"a":1}');
   });
+
+  it("throws beyond the nesting depth bound instead of overflowing the stack", () => {
+    const deep: unknown = JSON.parse("[".repeat(300) + "1" + "]".repeat(300));
+    expect(() => canonicalize(deep)).toThrow(CanonicalizationError);
+    expect(() => canonicalize(deep)).toThrow(/depth bound/);
+    // ...while legitimate nesting depths stay accepted.
+    const shallow = "[".repeat(50) + "1" + "]".repeat(50);
+    expect(canonicalize(JSON.parse(shallow))).toBe(shallow);
+  });
 });

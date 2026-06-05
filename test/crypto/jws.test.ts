@@ -3,13 +3,14 @@
  * negative-alg matrix. Every negative test EXECUTES the real attack (a
  * correctly-built malicious token), not a malformed string.
  */
-import { createHmac } from "node:crypto";
+import { createHmac, createPublicKey, sign as edSign } from "node:crypto";
 import { CompactSign, compactVerify, calculateJwkThumbprint, importJWK } from "jose";
 import { describe, expect, it } from "vitest";
 import { canonicalBytes } from "../../src/crypto/canonicalize.ts";
 import {
   EVIDENCE_JWS_ALG,
   JwsError,
+  type JwsErrorCode,
   signCompact,
   verifyCompact,
 } from "../../src/crypto/jws.ts";
@@ -31,6 +32,17 @@ const b64url = (data: Uint8Array | string): string =>
 
 const samplePayload = (): Uint8Array =>
   canonicalBytes({ decision: "deny", reason_codes: ["MAYSIR"], n: 1 });
+
+/** Assert that `fn` throws a JwsError carrying exactly `code` (never falls through). */
+function expectJwsError(fn: () => unknown, code: JwsErrorCode): void {
+  try {
+    fn();
+    expect.unreachable(`expected JwsError ${code}`);
+  } catch (error) {
+    expect(error).toBeInstanceOf(JwsError);
+    expect((error as JwsError).code).toBe(code);
+  }
+}
 
 describe("JWS round-trip (node:crypto sign → node:crypto verify)", () => {
   it("signs and verifies, returning the exact payload bytes", () => {
@@ -96,12 +108,11 @@ describe("negative-alg matrix — real attacks, all rejected", () => {
     const payload = b64url(samplePayload());
     const attack = `${header}.${payload}.`;
     expect(() => verifyCompact(attack, buildJwks([key.publicJwk]))).toThrow(JwsError);
-    try {
-      verifyCompact(`${header}.${payload}.${b64url("sig")}`, buildJwks([key.publicJwk]));
-      expect.unreachable("alg:none must be rejected");
-    } catch (error) {
-      expect((error as JwsError).code).toBe("alg_rejected");
-    }
+    expectJwsError(
+      () =>
+        verifyCompact(`${header}.${payload}.${b64url("sig")}`, buildJwks([key.publicJwk])),
+      "alg_rejected",
+    );
   });
 
   it("rejects HS256 substitution (HMAC keyed with the PUBLIC key bytes)", () => {
@@ -117,12 +128,10 @@ describe("negative-alg matrix — real attacks, all rejected", () => {
       .digest();
     const attack = `${header}.${payload}.${b64url(mac)}`;
 
-    try {
-      verifyCompact(attack, buildJwks([key.publicJwk]));
-      expect.unreachable("HS256 substitution must be rejected");
-    } catch (error) {
-      expect((error as JwsError).code).toBe("alg_rejected");
-    }
+    expectJwsError(
+      () => verifyCompact(attack, buildJwks([key.publicJwk])),
+      "alg_rejected",
+    );
   });
 
   it("rejects a tampered payload (decision flipped deny → allow, sig untouched)", () => {
@@ -135,12 +144,10 @@ describe("negative-alg matrix — real attacks, all rejected", () => {
     payload.decision = "allow";
     const tampered = `${header}.${b64url(canonicalBytes(payload))}.${signature}`;
 
-    try {
-      verifyCompact(tampered, buildJwks([key.publicJwk]));
-      expect.unreachable("tampered payload must be rejected");
-    } catch (error) {
-      expect((error as JwsError).code).toBe("signature_invalid");
-    }
+    expectJwsError(
+      () => verifyCompact(tampered, buildJwks([key.publicJwk])),
+      "signature_invalid",
+    );
   });
 
   it("rejects a tampered signature", () => {
@@ -152,12 +159,10 @@ describe("negative-alg matrix — real attacks, all rejected", () => {
     const mid = Math.floor(signature.length / 2);
     const flippedChar = signature[mid] === "A" ? "B" : "A";
     const tampered = `${header}.${payload}.${signature.slice(0, mid)}${flippedChar}${signature.slice(mid + 1)}`;
-    try {
-      verifyCompact(tampered, buildJwks([key.publicJwk]));
-      expect.unreachable("tampered signature must be rejected");
-    } catch (error) {
-      expect((error as JwsError).code).toBe("signature_invalid");
-    }
+    expectJwsError(
+      () => verifyCompact(tampered, buildJwks([key.publicJwk])),
+      "signature_invalid",
+    );
   });
 
   it("rejects a signature from the WRONG key presented under a known kid", () => {
@@ -168,23 +173,66 @@ describe("negative-alg matrix — real attacks, all rejected", () => {
       ...attacker,
       kid: honest.kid,
     });
-    try {
-      verifyCompact(jws, buildJwks([honest.publicJwk]));
-      expect.unreachable("wrong-key signature must be rejected");
-    } catch (error) {
-      expect((error as JwsError).code).toBe("signature_invalid");
-    }
+    expectJwsError(
+      () => verifyCompact(jws, buildJwks([honest.publicJwk])),
+      "signature_invalid",
+    );
   });
 
   it("rejects an unknown kid", () => {
     const key = generateSigningKey();
     const other = generateSigningKey();
     const jws = signCompact(samplePayload(), key);
-    try {
-      verifyCompact(jws, buildJwks([other.publicJwk]));
-      expect.unreachable("unknown kid must be rejected");
-    } catch (error) {
-      expect((error as JwsError).code).toBe("kid_unknown");
+    expectJwsError(
+      () => verifyCompact(jws, buildJwks([other.publicJwk])),
+      "kid_unknown",
+    );
+  });
+
+  it("rejects a non-Ed25519 key under a matching kid (EC P-256) with key_invalid", () => {
+    // The kid resolves, but the resolved key is the wrong type. The kty/crv
+    // gate fires BEFORE any key import — an EdDSA verifier must never touch a
+    // non-OKP key, even if an attacker parks one under a known kid.
+    const key = generateSigningKey();
+    const jws = signCompact(samplePayload(), key);
+    const ecJwk = {
+      kty: "EC",
+      crv: "P-256",
+      x: "f83OJ3D2xF1Bg8vub9tLe1gHMzV76e8Tus9uPHvRVEU",
+      y: "x_FEzRu9m36HLN_tue659LNpXW6pCyStikYjKIWI5a0",
+      kid: key.kid,
+      alg: "EdDSA",
+      use: "sig",
+    };
+    const forgedJwks = { keys: [ecJwk] } as unknown as {
+      keys: (typeof key.publicJwk)[];
+    };
+    expectJwsError(() => verifyCompact(jws, forgedJwks), "key_invalid");
+  });
+
+  it("rejects a validly-signed JWS whose payload is not JSON (payload_not_json)", () => {
+    // Sign raw non-JSON bytes with a real key: the signature verifies, the
+    // alg/kid/key checks all pass, and ONLY the payload JSON.parse fails.
+    const key = generateSigningKey();
+    const jws = signCompact(new TextEncoder().encode("not json"), key);
+    expectJwsError(
+      () => verifyCompact(jws, buildJwks([key.publicJwk])),
+      "payload_not_json",
+    );
+  });
+
+  it("rejects a JWS whose protected header is valid JSON but not an object (null/array)", () => {
+    const key = generateSigningKey();
+    const payload = b64url(samplePayload());
+    // JSON.parse("null") → null; a naive header.alg access would crash with a
+    // TypeError instead of the JwsError this module promises on ANY defect.
+    for (const headerJson of ["null", "[]"]) {
+      const attack = `${b64url(headerJson)}.${payload}.${b64url("sig")}`;
+      expectJwsError(() => verifyCompact(attack, buildJwks([key.publicJwk])), "malformed");
+      // Verifier parity: a structured FAIL verdict, never a crash.
+      const result = verifyEvidence({ jws: attack, jwks: buildJwks([key.publicJwk]) });
+      expect(result.ok).toBe(false);
+      expect(result.checks.at(-1)?.id).toBe("structure");
     }
   });
 
@@ -195,12 +243,10 @@ describe("negative-alg matrix — real attacks, all rejected", () => {
     );
     const payload = b64url(samplePayload());
     const attack = `${header}.${payload}.${b64url("sig")}`;
-    try {
-      verifyCompact(attack, buildJwks([key.publicJwk]));
-      expect.unreachable("crit must be rejected");
-    } catch (error) {
-      expect((error as JwsError).code).toBe("crit_rejected");
-    }
+    expectJwsError(
+      () => verifyCompact(attack, buildJwks([key.publicJwk])),
+      "crit_rejected",
+    );
   });
 
   it("the standalone verifier rejects the same attacks at the alg-pinning gate", () => {
@@ -222,6 +268,62 @@ describe("negative-alg matrix — real attacks, all rejected", () => {
     const hsResult = verifyEvidence({ jws: hs256, jwks });
     expect(hsResult.ok).toBe(false);
     expect(hsResult.checks.at(-1)?.id).toBe("alg-pinned");
+  });
+
+  it("the standalone verifier FAILS a validly-SIGNED but non-canonical payload at the canonical-form check", () => {
+    const key = generateSigningKey();
+    // Keys deliberately OUT of JCS order — the signature is genuine, so only
+    // the canonical-form (anti-malleability) check can catch this.
+    const payloadB64 = b64url('{"z":1,"a":2}');
+    const headerB64 = b64url(JSON.stringify({ alg: "EdDSA", kid: key.kid }));
+    const signature = b64url(
+      edSign(null, Buffer.from(`${headerB64}.${payloadB64}`, "utf8"), key.privateKey),
+    );
+    const result = verifyEvidence({
+      jws: `${headerB64}.${payloadB64}.${signature}`,
+      jwks: buildJwks([key.publicJwk]),
+    });
+    expect(result.ok).toBe(false);
+    // The signature check itself passed — canonicality is what failed.
+    expect(result.checks.find((check) => check.id === "signature")?.ok).toBe(true);
+    expect(result.checks.find((check) => check.id === "canonical-form")?.ok).toBe(false);
+  });
+
+  it("the standalone verifier FAILS a deeply-nested self-signed payload with a structured verdict, never a crash", () => {
+    const key = generateSigningKey();
+    // 300 levels of array nesting IS canonical JSON — without the depth bound
+    // the canonical-form check would overflow the stack instead of failing.
+    const deepJson = "[".repeat(300) + "1" + "]".repeat(300);
+    const payloadB64 = b64url(deepJson);
+    const headerB64 = b64url(JSON.stringify({ alg: "EdDSA", kid: key.kid }));
+    const signature = b64url(
+      edSign(null, Buffer.from(`${headerB64}.${payloadB64}`, "utf8"), key.privateKey),
+    );
+    const result = verifyEvidence({
+      jws: `${headerB64}.${payloadB64}.${signature}`,
+      jwks: buildJwks([key.publicJwk]),
+    });
+    expect(result.ok).toBe(false);
+    const canonicalCheck = result.checks.find((check) => check.id === "canonical-form");
+    expect(canonicalCheck?.ok).toBe(false);
+    expect(canonicalCheck?.detail).toContain("depth bound");
+  });
+
+  it("the standalone verifier rejects a validly-SIGNED null payload at the envelope-shape check", () => {
+    const key = generateSigningKey();
+    // "null" IS its own canonical form, so this sails through the canonical-form
+    // check and must be stopped — structurally, not by a crash — at envelope-shape.
+    const payloadB64 = b64url("null");
+    const headerB64 = b64url(JSON.stringify({ alg: "EdDSA", kid: key.kid }));
+    const signature = b64url(
+      edSign(null, Buffer.from(`${headerB64}.${payloadB64}`, "utf8"), key.privateKey),
+    );
+    const result = verifyEvidence({
+      jws: `${headerB64}.${payloadB64}.${signature}`,
+      jwks: buildJwks([key.publicJwk]),
+    });
+    expect(result.ok).toBe(false);
+    expect(result.checks.at(-1)?.id).toBe("envelope-shape");
   });
 
   it("the standalone verifier rejects a JWKS whose kid is not the key's thumbprint", () => {
@@ -259,6 +361,42 @@ describe("did:key encoding", () => {
   it("rejects non-Ed25519 did:key inputs", () => {
     expect(() => rawPublicKeyFromDidKey("did:key:abc")).toThrow();
     expect(() => didKeyFromRawPublicKey(new Uint8Array(16))).toThrow();
+  });
+
+  it("rejects a did:key carrying the wrong multicodec prefix", () => {
+    // Valid base58btc body and the did:key:z multibase prefix, but the
+    // multicodec bytes are NOT ed25519-pub (0xed01) → decode must refuse.
+    // Non-zero filler avoids the base58 leading-zero special case.
+    const filler = Array.from({ length: 32 }, () => 0x01);
+    const wrongCodec = Uint8Array.from([0xaa, 0xbb, ...filler]);
+    const did = `did:key:z${base58btcEncode(wrongCodec)}`;
+    expect(() => rawPublicKeyFromDidKey(did)).toThrow(/multicodec/);
+  });
+
+  it("rejects a did:key with the ed25519-pub prefix but the wrong key length", () => {
+    // Correct 0xed01 multicodec prefix, but only 31 key bytes follow (32 are
+    // required) → the length guard must reject it.
+    const filler = Array.from({ length: 31 }, () => 0x01);
+    const shortKey = Uint8Array.from([0xed, 0x01, ...filler]);
+    const did = `did:key:z${base58btcEncode(shortKey)}`;
+    expect(() => rawPublicKeyFromDidKey(did)).toThrow(/32 key bytes/);
+  });
+
+  it("exportPrivateJwk throws when the key object carries no private 'd' scalar", () => {
+    // A public-only KeyObject has no 'd'. Wrapping it as a SigningKey and asking
+    // for its private JWK must throw rather than emit a 'd'-less private JWK.
+    const key = generateSigningKey();
+    const publicOnly = createPublicKey({
+      key: { kty: "OKP", crv: "Ed25519", x: key.publicJwk.x },
+      format: "jwk",
+    });
+    const fakeSigningKey = {
+      privateKey: publicOnly,
+      publicJwk: key.publicJwk,
+      kid: key.kid,
+      did: key.did,
+    };
+    expect(() => exportPrivateJwk(fakeSigningKey)).toThrow(/missing 'd'/);
   });
 
   it("base58btc handles leading zero bytes (first-principles vector)", () => {

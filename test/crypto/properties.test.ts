@@ -12,14 +12,11 @@ import { describe, expect, it } from "vitest";
 import { canonicalize } from "../../src/crypto/canonicalize.ts";
 import { sha256Hex } from "../../src/crypto/hash.ts";
 import { buildJwks, generateSigningKey } from "../../src/crypto/keys.ts";
-import {
-  buildEnvelope,
-  signEnvelope,
-  type EnvelopeDeps,
-} from "../../src/evidence/envelope.ts";
+import { buildEnvelope, signEnvelope } from "../../src/evidence/envelope.ts";
 import { evaluate } from "../../src/rules/evaluator.ts";
 import { loadRulePack } from "../../src/rules/loader.ts";
 import { jcsCanonicalize, verifyEvidence } from "../../verifier/verify.mjs";
+import { fixedEnvelopeDeps } from "../fixtures/deps.ts";
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const packText = readFileSync(
@@ -47,6 +44,12 @@ function reverseKeyOrder(value: unknown): unknown {
   return value;
 }
 
+describe("fast-check global config (reproducible property runs)", () => {
+  it("a global seed is pinned so a CI counterexample replays locally", () => {
+    expect(fc.readConfigureGlobal()?.seed).toBeDefined();
+  });
+});
+
 describe("dual JCS implementations agree (sign-side TS vs verifier-side JS)", () => {
   it("canonicalize === jcsCanonicalize for arbitrary JSON values", () => {
     fc.assert(
@@ -58,8 +61,12 @@ describe("dual JCS implementations agree (sign-side TS vs verifier-side JS)", ()
   });
 
   it("canonical form is invariant under key reordering (both implementations)", () => {
+    // Wrap each generated value in a record with two fixed-named keys so EVERY
+    // run embeds a ≥2-key object — otherwise a primitive/array draw would carry
+    // no keys to reorder and the property would pass trivially.
+    const multiKey = fc.record({ beta: fc.jsonValue(), alpha: fc.jsonValue() });
     fc.assert(
-      fc.property(fc.jsonValue(), (value) => {
+      fc.property(multiKey, (value) => {
         const shuffled = reverseKeyOrder(value);
         expect(canonicalize(shuffled)).toBe(canonicalize(value));
         expect(jcsCanonicalize(shuffled)).toBe(jcsCanonicalize(value));
@@ -143,10 +150,6 @@ const intentArbitrary = fc.record(
   { requiredKeys: ["profile", "merchant", "amount"] },
 );
 
-const fixedDeps: EnvelopeDeps = {
-  now: () => new Date("2026-06-04T12:00:00.000Z"),
-  uuid: () => "00000000-0000-4000-8000-000000000000",
-};
 
 describe("for-all synthetic intents: evidence signs and offline-verifies", () => {
   const key = generateSigningKey();
@@ -158,7 +161,12 @@ describe("for-all synthetic intents: evidence signs and offline-verifies", () =>
         const evaluation = evaluate(intent, loadedPack.pack);
         expect(["allow", "review", "deny"]).toContain(evaluation.decision);
 
-        const envelope = buildEnvelope(intent, evaluation, loadedPack, fixedDeps);
+        const envelope = buildEnvelope(
+          intent,
+          evaluation,
+          loadedPack,
+          fixedEnvelopeDeps,
+        );
         const jws = signEnvelope(envelope, key);
         const result = verifyEvidence({ jws, jwks, pack: packDocument });
         expect(result.ok).toBe(true);
@@ -183,10 +191,21 @@ describe("for-all synthetic intents: evidence signs and offline-verifies", () =>
   });
 
   it('any intent whose attributes include "gambling" is denied with MAYSIR', () => {
+    // Force "gambling" into the attribute set (deduped, "gambling" first) so all
+    // numRuns exercise the deny path — no fc.pre discards, no trivially-passing runs.
+    const gamblingIntent = intentArbitrary.map((intent) => ({
+      ...intent,
+      merchant: {
+        ...intent.merchant,
+        attributes: [
+          "gambling",
+          ...(intent.merchant.attributes ?? []).filter((a) => a !== "gambling"),
+        ],
+      },
+    }));
     fc.assert(
-      fc.property(intentArbitrary, (intent) => {
-        const attributes = intent.merchant.attributes ?? [];
-        fc.pre(attributes.includes("gambling"));
+      fc.property(gamblingIntent, (intent) => {
+        expect(intent.merchant.attributes).toContain("gambling");
         const evaluation = evaluate(intent, loadedPack.pack);
         expect(evaluation.decision).toBe("deny");
         expect(evaluation.reason_codes).toContain("MAYSIR");
