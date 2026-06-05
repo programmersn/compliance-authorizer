@@ -3,7 +3,13 @@
  * issuer key, start the API. SYNTHETIC DATA ONLY — this service must never
  * receive real card or customer data.
  */
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  writeFileSync,
+} from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -22,30 +28,77 @@ function loadOrCreateIssuerKey(): SigningKey {
   const keysDir = process.env["KEYS_DIR"] ?? join(repoRoot, ".keys");
   const keyPath = join(keysDir, "issuer.jwk.json");
   if (existsSync(keyPath)) {
-    return importPrivateJwk(
-      JSON.parse(readFileSync(keyPath, "utf8")) as PrivateJwk,
-    );
+    try {
+      return importPrivateJwk(
+        JSON.parse(readFileSync(keyPath, "utf8")) as PrivateJwk,
+      );
+    } catch (cause) {
+      // A truncated write or a hand-edit leaves an unparseable/invalid JWK. Surface
+      // an actionable message instead of a raw SyntaxError — this is a dev keystore,
+      // so deleting it regenerates a fresh key on the next boot.
+      throw new Error(
+        `issuer keystore at ${keyPath} is unreadable or corrupt; delete it to regenerate a fresh dev key`,
+        { cause },
+      );
+    }
   }
   const key = generateSigningKey();
   mkdirSync(keysDir, { recursive: true });
-  writeFileSync(keyPath, JSON.stringify(exportPrivateJwk(key), null, 2), {
+  // Atomic write: serialize to a temp file in the SAME directory, then rename over
+  // the target (renameSync is atomic on a single volume on POSIX and Windows), so a
+  // crash mid-write can never leave a half-written keystore behind.
+  // mode 0o600 is POSIX-only; on Windows it is a no-op (no ACL is applied), so the
+  // dev keystore there relies on .gitignore (.keys/) and a single-user machine.
+  const tempPath = `${keyPath}.${process.pid}.tmp`;
+  writeFileSync(tempPath, JSON.stringify(exportPrivateJwk(key), null, 2), {
     mode: 0o600,
   });
+  renameSync(tempPath, keyPath);
   return key;
 }
 
-const loadedPack = loadRulePackFile(
-  join(repoRoot, "rule-packs", "shariah", "0.1.0.json"),
-);
-const signingKey = loadOrCreateIssuerKey();
+/**
+ * Resolve the listen port. Unset/empty/whitespace falls back to the default;
+ * anything else MUST be an integer in [1, 65535]. Crucially, never let Number("")
+ * → 0 silently bind a random ephemeral port — fail loudly instead.
+ */
+function parsePort(): number {
+  const raw = process.env["PORT"];
+  if (raw === undefined || raw.trim() === "") return 8787;
+  const port = Number(raw);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    process.stderr.write(
+      `compliance-authorizer: PORT must be an integer in [1, 65535] (got ${JSON.stringify(raw)})\n`,
+    );
+    process.exit(1);
+  }
+  return port;
+}
 
-const app = buildServer({
-  loadedPacks: [loadedPack],
-  signingKey,
-  logger: true,
-});
+// Synchronous boot: load the pack, restore/generate the issuer key, build the
+// server. Any failure here (e.g. a corrupt keystore) must print ONE actionable
+// operator line and exit — never crash with a raw stack trace.
+let loadedPack: ReturnType<typeof loadRulePackFile>;
+let signingKey: SigningKey;
+let app: ReturnType<typeof buildServer>;
+try {
+  loadedPack = loadRulePackFile(
+    join(repoRoot, "rule-packs", "shariah", "0.1.0.json"),
+  );
+  signingKey = loadOrCreateIssuerKey();
+  app = buildServer({
+    loadedPacks: [loadedPack],
+    signingKey,
+    logger: true,
+  });
+} catch (error) {
+  process.stderr.write(
+    `compliance-authorizer: failed to start — ${error instanceof Error ? error.message : String(error)}\n`,
+  );
+  process.exit(1);
+}
 
-const port = Number(process.env["PORT"] ?? 8787);
+const port = parsePort();
 app
   .listen({ port, host: "127.0.0.1" })
   .then(() => {

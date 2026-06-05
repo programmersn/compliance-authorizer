@@ -16,9 +16,9 @@ import {
   type EnvelopeDeps,
 } from "../evidence/envelope.ts";
 import type { SigningKey } from "../crypto/keys.ts";
-import { evaluate } from "../rules/evaluator.ts";
+import { evaluate, type MatchedRule } from "../rules/evaluator.ts";
 import type { LoadedRulePack } from "../rules/loader.ts";
-import { ProblemError } from "../http/problem.ts";
+import { PROBLEM_TYPE_BASE, ProblemError } from "../http/problem.ts";
 
 /**
  * Synthetic payment intent (D10: TypeBox is the schema source of truth).
@@ -73,6 +73,21 @@ const MatchedRuleSchema = Type.Object({
   }),
 });
 
+/**
+ * D10 drift guard (compile-time only): this response schema and the
+ * evaluator's MatchedRule are hand-authored in two places and MUST stay
+ * structurally identical in both directions — fast-json-stringify serializes
+ * against the schema, so a field added to MatchedRule but not here would be
+ * SILENTLY stripped from the API response. A mismatch fails `npm run typecheck`.
+ */
+type AssertTrue<T extends true> = T;
+export type MatchedRuleSchemaCoversEvaluator = AssertTrue<
+  Static<typeof MatchedRuleSchema> extends MatchedRule ? true : false
+>;
+export type EvaluatorCoversMatchedRuleSchema = AssertTrue<
+  MatchedRule extends Static<typeof MatchedRuleSchema> ? true : false
+>;
+
 export const AuthorizeResponseSchema = Type.Object({
   decision: Type.Union([
     Type.Literal("allow"),
@@ -86,8 +101,12 @@ export const AuthorizeResponseSchema = Type.Object({
   rule_pack_id: Type.String(),
   rule_pack_version: Type.String(),
   rule_pack_hash: Type.String(),
+  /** Pack certification status — the UNCERTIFIED honesty marker, visible without decoding the JWS. */
+  rule_pack_status: Type.Literal("uncertified"),
   evaluator_version: Type.String(),
   intent_hash: Type.String(),
+  /** Version of the signed envelope's own schema (mirrored from the envelope). */
+  envelope_version: Type.String(),
   /** JWS-compact evidence envelope — verify it offline with verifier/verify.mjs. */
   evidence_artifact: Type.String(),
 });
@@ -120,7 +139,7 @@ export const authorizeRoute: FastifyPluginAsync<AuthorizeRouteOptions> = (
           422,
           "Unknown compliance profile",
           `Profile "${intent.profile}" is not loaded on this engine. No decision was made and no evidence envelope exists for this request.`,
-          "https://github.com/nouaim/compliance-authorizer/problems/unknown-profile",
+          `${PROBLEM_TYPE_BASE}/unknown-profile`,
           { available_profiles: [...options.packsByProfile.keys()] },
         );
       }
@@ -144,8 +163,10 @@ export const authorizeRoute: FastifyPluginAsync<AuthorizeRouteOptions> = (
         rule_pack_id: envelope.rule_pack_id,
         rule_pack_version: envelope.rule_pack_version,
         rule_pack_hash: envelope.rule_pack_hash,
+        rule_pack_status: loadedPack.pack.status,
         evaluator_version: envelope.evaluator_version,
         intent_hash: envelope.intent_hash,
+        envelope_version: envelope.envelope_version,
         evidence_artifact: evidenceArtifact,
       };
     },

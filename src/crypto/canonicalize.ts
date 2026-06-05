@@ -17,6 +17,14 @@ export class CanonicalizationError extends Error {
 }
 
 /**
+ * Nesting bound for canonicalization. RFC 8785 imposes none, but unbounded
+ * recursion over hostile input is a stack-overflow crash; legitimate envelopes
+ * are ~4 levels deep. The standalone verifier pins the SAME bound so the two
+ * implementations keep agreeing on every input (property-tested).
+ */
+export const MAX_CANONICALIZATION_DEPTH = 200;
+
+/**
  * Serialize a JSON-compatible value to its RFC 8785 canonical form.
  *
  * - Object members are sorted by UTF-16 code units of their names (§3.2.3),
@@ -26,6 +34,15 @@ export class CanonicalizationError extends Error {
  *   -0 → "0" and shortest-round-trip number formatting.
  */
 export function canonicalize(value: unknown): string {
+  return canonicalizeAtDepth(value, 0);
+}
+
+function canonicalizeAtDepth(value: unknown, depth: number): string {
+  if (depth > MAX_CANONICALIZATION_DEPTH) {
+    throw new CanonicalizationError(
+      `nesting exceeds the canonicalization depth bound (${MAX_CANONICALIZATION_DEPTH})`,
+    );
+  }
   if (value === null) return "null";
 
   switch (typeof value) {
@@ -49,7 +66,7 @@ export function canonicalize(value: unknown): string {
   }
 
   if (Array.isArray(value)) {
-    return `[${value.map((element) => canonicalize(element)).join(",")}]`;
+    return `[${value.map((element) => canonicalizeAtDepth(element, depth + 1)).join(",")}]`;
   }
 
   const prototype: unknown = Object.getPrototypeOf(value);
@@ -69,12 +86,14 @@ export function canonicalize(value: unknown): string {
           `undefined member "${key}" cannot be canonicalized`,
         );
       }
-      return `${JSON.stringify(key)}:${canonicalize(member)}`;
+      return `${JSON.stringify(key)}:${canonicalizeAtDepth(member, depth + 1)}`;
     });
   return `{${members.join(",")}}`;
 }
 
+const encoder = new TextEncoder();
+
 /** Canonical UTF-8 bytes of a JSON value — the exact bytes that get hashed/signed. */
 export function canonicalBytes(value: unknown): Uint8Array {
-  return new TextEncoder().encode(canonicalize(value));
+  return encoder.encode(canonicalize(value));
 }

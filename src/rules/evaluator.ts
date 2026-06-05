@@ -38,8 +38,10 @@ function isPrimitive(value: unknown): value is JsonPrimitive {
 }
 
 /**
- * Resolve a dot path against the intent. Traverses plain objects only; any
- * missing or non-object segment yields undefined (the condition then fails).
+ * Resolve a dot path against the intent. Traverses plain objects only, and
+ * reads OWN properties only — inherited prototype members ("constructor",
+ * "__proto__") are NOT intent fields and never resolve. Any missing or
+ * non-object segment yields undefined (the condition then fails).
  */
 function resolvePath(intent: Record<string, unknown>, path: string): unknown {
   let current: unknown = intent;
@@ -47,7 +49,8 @@ function resolvePath(intent: Record<string, unknown>, path: string): unknown {
     if (
       current === null ||
       typeof current !== "object" ||
-      Array.isArray(current)
+      Array.isArray(current) ||
+      !Object.hasOwn(current, segment)
     ) {
       return undefined;
     }

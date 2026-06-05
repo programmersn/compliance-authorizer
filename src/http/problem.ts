@@ -17,6 +17,10 @@ import type {
 
 export const PROBLEM_CONTENT_TYPE = "application/problem+json";
 
+/** Base URI for this service's problem-type identifiers (RFC 9457 `type`). */
+export const PROBLEM_TYPE_BASE =
+  "https://github.com/programmersn/compliance-authorizer/problems";
+
 export interface ProblemDocument {
   type: string;
   title: string;
@@ -73,7 +77,7 @@ function validationProblem(error: FastifyError): ProblemDocument {
       : {}),
   }));
   return {
-    type: "https://github.com/nouaim/compliance-authorizer/problems/invalid-intent",
+    type: `${PROBLEM_TYPE_BASE}/invalid-intent`,
     title: "Payment intent failed schema validation",
     status: 400,
     detail:
@@ -90,6 +94,24 @@ export function registerProblemHandling(app: FastifyInstance): void {
     }
     if (error.validation) {
       sendProblem(reply, validationProblem(error));
+      return;
+    }
+    // Fastify framework-level request errors (unparseable JSON, wrong or
+    // missing content-type, body over the size cap, ...) carry a 4xx
+    // statusCode but no .validation array. They are INTEGRATION FAILURES —
+    // the request never reached evaluation — and must surface as 4xx
+    // problem+json, never as a 500 "our fault".
+    if (
+      typeof error.statusCode === "number" &&
+      error.statusCode >= 400 &&
+      error.statusCode < 500
+    ) {
+      sendProblem(reply, {
+        type: "about:blank",
+        title: "Request rejected before evaluation",
+        status: error.statusCode,
+        detail: `${error.message.replace(/\.+$/, "")}. No decision was made and no evidence envelope exists for this request.`,
+      });
       return;
     }
     request.log.error(error);

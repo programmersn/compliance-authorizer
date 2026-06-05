@@ -16,7 +16,9 @@
  * Usage:
  *   node verifier/verify.mjs --evidence <evidence.jws> --jwks <jwks.json> [--pack <pack.json>]
  *
- * Exit code 0 = every check passed. Exit code 1 = at least one check failed.
+ * Exit codes: 0 = every check passed; 1 = at least one check failed (the
+ * artifact is NOT valid evidence); 2 = operator/input error (bad usage or
+ * unreadable/unparseable input files — nothing was verified either way).
  */
 import { createHash, createPublicKey, verify as ed25519Verify } from "node:crypto";
 import { readFileSync } from "node:fs";
@@ -28,8 +30,23 @@ import { parseArgs } from "node:util";
 // src/crypto/canonicalize.ts ON PURPOSE.
 // ---------------------------------------------------------------------------
 
+// Nesting bound: RFC 8785 imposes none, but unbounded recursion over hostile
+// input is a stack-overflow crash. Pinned to the SAME value as the signing
+// side (src/crypto/canonicalize.ts) so the two implementations keep agreeing.
+const MAX_CANONICALIZATION_DEPTH = 200;
+
 /** @param {unknown} value @returns {string} */
 export function jcsCanonicalize(value) {
+  return jcsCanonicalizeAtDepth(value, 0);
+}
+
+/** @param {unknown} value @param {number} depth @returns {string} */
+function jcsCanonicalizeAtDepth(value, depth) {
+  if (depth > MAX_CANONICALIZATION_DEPTH) {
+    throw new Error(
+      `nesting exceeds the canonicalization depth bound (${MAX_CANONICALIZATION_DEPTH})`,
+    );
+  }
   if (value === null) return "null";
   const type = typeof value;
   if (type === "boolean" || type === "string") return JSON.stringify(value);
@@ -42,7 +59,7 @@ export function jcsCanonicalize(value) {
     let out = "[";
     for (let i = 0; i < value.length; i++) {
       if (i > 0) out += ",";
-      out += jcsCanonicalize(value[i]);
+      out += jcsCanonicalizeAtDepth(value[i], depth + 1);
     }
     return out + "]";
   }
@@ -53,7 +70,7 @@ export function jcsCanonicalize(value) {
     const member = /** @type {Record<string, unknown>} */ (value)[key];
     if (member === undefined) throw new Error(`undefined member "${key}" in JCS input`);
     if (i > 0) out += ",";
-    out += JSON.stringify(key) + ":" + jcsCanonicalize(member);
+    out += JSON.stringify(key) + ":" + jcsCanonicalizeAtDepth(member, depth + 1);
   }
   return out + "}";
 }
@@ -129,6 +146,12 @@ export function verifyEvidence({ jws, jwks, pack }) {
   } catch {
     return fail("structure", "JWS-compact structure", "protected header is not valid JSON");
   }
+  // JSON.parse can yield null/arrays/primitives — only an OBJECT is a header.
+  // (Without this guard, `null` would crash property access with a TypeError
+  // instead of producing a structured FAIL verdict.)
+  if (header === null || typeof header !== "object" || Array.isArray(header)) {
+    return fail("structure", "JWS-compact structure", "protected header is not a JSON object");
+  }
   pass("structure", "JWS-compact structure", "3 segments, protected header parses");
 
   // 2. Algorithm pinning — BEFORE any key material is touched.
@@ -189,13 +212,25 @@ export function verifyEvidence({ jws, jwks, pack }) {
   } catch {
     return fail("canonical-form", "Payload is canonical JSON (RFC 8785)", "payload is not valid JSON");
   }
-  if (Buffer.from(jcsCanonicalize(envelope), "utf8").compare(payloadBytes) !== 0) {
+  let canonicalEnvelope;
+  try {
+    canonicalEnvelope = jcsCanonicalize(envelope);
+  } catch (error) {
+    // e.g. nesting beyond the depth bound — the payload's canonical form
+    // cannot be confirmed, so this is a structured FAIL, never a crash.
+    return fail("canonical-form", "Payload is canonical JSON (RFC 8785)",
+      `payload cannot be canonicalized: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  if (Buffer.from(canonicalEnvelope, "utf8").compare(payloadBytes) !== 0) {
     return fail("canonical-form", "Payload is canonical JSON (RFC 8785)",
       "payload bytes differ from the canonical serialization of their own content");
   }
   pass("canonical-form", "Payload is canonical JSON (RFC 8785)", "payload bytes equal their canonical re-serialization");
 
   // 6. Envelope shape
+  if (envelope === null || typeof envelope !== "object" || Array.isArray(envelope)) {
+    return fail("envelope-shape", "Evidence envelope shape", "payload is not a JSON object");
+  }
   const required = [
     "envelope_version", "decision_id", "decision", "reason_codes", "matched_rules",
     "rule_pack_id", "rule_pack_version", "rule_pack_hash", "evaluator_version",
@@ -258,9 +293,19 @@ function main() {
     process.exit(2);
   }
 
-  const jws = readFileSync(values.evidence, "utf8");
-  const jwks = JSON.parse(readFileSync(values.jwks, "utf8"));
-  const pack = values.pack ? JSON.parse(readFileSync(values.pack, "utf8")) : undefined;
+  // Input problems are OPERATOR errors (exit 2, like bad usage) — never exit 1,
+  // which is reserved for "this artifact is NOT valid evidence". An unreadable
+  // file means nothing was verified, and the exit code must not say otherwise.
+  let jws, jwks, pack;
+  try {
+    jws = readFileSync(values.evidence, "utf8");
+    jwks = JSON.parse(readFileSync(values.jwks, "utf8"));
+    pack = values.pack ? JSON.parse(readFileSync(values.pack, "utf8")) : undefined;
+  } catch (error) {
+    console.error(`INPUT ERROR (nothing was verified): ${error instanceof Error ? error.message : String(error)}`);
+    console.error("Could not read or parse the provided files — operator/input problem, NOT a verification verdict.");
+    process.exit(2);
+  }
 
   console.log("OFFLINE EVIDENCE VERIFICATION — zero server trust, node built-ins only");
   console.log(`  evidence: ${values.evidence}`);
@@ -268,7 +313,16 @@ function main() {
   console.log(`  pack:     ${values.pack ?? "(not provided — rule_pack_hash not checked)"}`);
   console.log("");
 
-  const result = verifyEvidence({ jws, jwks, pack });
+  // Catch-all: a verifier malfunction must NEVER exit 1 — that code is a
+  // verification VERDICT ("not valid evidence"), and a crash is not a verdict.
+  let result;
+  try {
+    result = verifyEvidence({ jws, jwks, pack });
+  } catch (error) {
+    console.error(`VERIFIER ERROR (nothing was verified): ${error instanceof Error ? error.message : String(error)}`);
+    console.error("The verifier failed before reaching a verdict — operator/input problem, NOT a verification verdict.");
+    process.exit(2);
+  }
   for (const check of result.checks) {
     console.log(`  [${check.ok ? "PASS" : "FAIL"}] ${check.title}`);
     console.log(`         ${check.detail}`);
@@ -286,6 +340,9 @@ function main() {
       console.log(`  TRUST ANCHOR: a verifier proves consistency with the JWKS you hand it.`);
       console.log(`  Confirm this did:key fingerprint against the issuer's published key`);
       console.log(`  (obtained out-of-band) before treating the evidence as theirs.`);
+      console.log(`  SCOPE: PASS proves authenticity and integrity (signature, canonical`);
+      console.log(`  form, hashes). It does NOT re-run the rule evaluator — replaying the`);
+      console.log(`  decision additionally requires the matching evaluator (evaluator_version above).`);
     }
     console.log(`  NOTE: UNCERTIFIED — synthetic demo rule pack; not a fatwa / not certified / not production advice.`);
     process.exit(0);

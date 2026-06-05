@@ -85,15 +85,23 @@ export function verifyCompact(
     throw new JwsError("malformed", "JWS-compact has an empty segment");
   }
 
-  let header: Record<string, unknown>;
+  let headerValue: unknown;
   try {
-    header = JSON.parse(Buffer.from(headerB64, "base64url").toString("utf8")) as Record<
-      string,
-      unknown
-    >;
+    headerValue = JSON.parse(Buffer.from(headerB64, "base64url").toString("utf8"));
   } catch {
     throw new JwsError("malformed", "protected header is not valid JSON");
   }
+  // JSON.parse can yield null/arrays/primitives — only an OBJECT is a header.
+  // (Without this guard, `null` would crash property access with a TypeError
+  // instead of the JwsError this module promises on ANY defect.)
+  if (
+    headerValue === null ||
+    typeof headerValue !== "object" ||
+    Array.isArray(headerValue)
+  ) {
+    throw new JwsError("malformed", "protected header is not a JSON object");
+  }
+  const header = headerValue as Record<string, unknown>;
 
   // Pin the algorithm BEFORE any key material is touched.
   if (header["alg"] !== EVIDENCE_JWS_ALG) {

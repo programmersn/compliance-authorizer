@@ -86,6 +86,10 @@ export function buildEnvelope(
     rule_pack_version: loadedPack.pack.version,
     rule_pack_hash: loadedPack.hash,
     evaluator_version: EVALUATOR_VERSION,
+    // The intent is canonicalized twice per request — here for intent_hash,
+    // and again inside signEnvelope() as part of the whole envelope. Accepted:
+    // both passes are bounded by the 1 MiB body cap, and deduplicating would
+    // couple intent hashing to envelope serialization for no measurable win.
     intent_hash: sha256Hex(canonicalize(intent)),
     scholar_signature_ref: UNCERTIFIED_SCHOLAR_REF,
     payment_intent: intent,

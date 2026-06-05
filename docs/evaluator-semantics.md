@@ -31,6 +31,9 @@ Rule conditions address intent fields by **dot path** (e.g. `merchant.mcc`,
 - Path segments traverse **plain JSON objects only**. If any segment is
   missing, or an intermediate value is `null`, an array, or a primitive, the
   resolved value is *absent*.
+- Only a member **present in the JSON data itself** resolves. Names a host
+  language may expose on every object (JavaScript `constructor`, `__proto__`,
+  …) are *absent* unless the intent document literally carries them.
 - Arrays are never indexed by path at evaluator 0.1.0 (use the `includes`
   operator on an array-valued field instead).
 
