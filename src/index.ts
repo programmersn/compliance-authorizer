@@ -92,6 +92,9 @@ try {
   app = buildServer({
     loadedPacks: [loadedPack],
     signingKey,
+    // Key-rotation seam: once the keystore retains rotated-out keys, pass the
+    // full historical public set here as `publishedKeys` so old envelopes stay
+    // verifiable. Until then buildServer defaults to [signingKey.publicJwk].
     logger: true,
   });
 } catch (error) {

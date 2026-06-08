@@ -16,7 +16,10 @@
     "test:watch": "vitest",
     "dev": "node --experimental-strip-types --no-warnings src/index.ts",
     "start": "node dist/index.js",
-    "verify": "node verifier/verify.mjs"
+    "verify": "node verifier/verify.mjs",
+    "verify:fixture": "node verifier/verify.mjs --evidence examples/casino-hotel.evidence.jws --jwks examples/jwks.json --pack examples/pack.json",
+    "replay": "node --experimental-strip-types --no-warnings scripts/replay.ts --evidence examples/casino-hotel.evidence.jws --pack examples/pack.json",
+    "build:example": "node --experimental-strip-types --no-warnings scripts/build-example.ts"
   },
   "dependencies": {
     "@fastify/type-provider-typebox": "^6.1.0",
