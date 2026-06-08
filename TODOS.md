@@ -5,23 +5,18 @@ Strategy, outreach, and research planning live in the project's private workspac
 the `T-D*` task IDs trace to the private planning records.
 
 ## W1 — crypto/API core (the gate; build synchronously)
-- [ ] **GATE:** sign → offline-verify round-trip green in CI; property-based + negative-alg
+- [x] **GATE:** sign → offline-verify round-trip green in CI; property-based + negative-alg
       tests (alg:none, alg-substitution, tampered payload/sig all rejected) + canonicalization invariance
-      — *test matrix complete and green locally (106/106 at v0.1.0.0, 2026-06-05); tick only when the
-      `w1-gate` workflow has actually run green on GitHub (Actions billing-locked at ship time)*
-      **Priority:** P0
-- [ ] **Deferred cross-vendor review (Codex):** re-run the outside-voice pass skipped in the
-      2026-06-05 review (tool quota; earliest re-run 2026-07-02). Scope: the W1 crypto/API core
-      diffed against pre-W1 base `0b2b4d2` — `src/crypto/`, `src/evidence/`, `src/rules/`,
-      `src/http/`, `src/routes/`, `src/server.ts`, `src/index.ts`, `verifier/verify.mjs`,
-      `rule-packs/shariah/0.1.0.json`, `test/` (exclude `package-lock.json`). Both passes:
-      adversarial (`codex exec`, read-only, high reasoning) + structured (`codex review`);
-      triage any findings through the standard fix-first flow before W3-4 ships.
-      **Pinned at /ship (2026-06-05): upper bound `2985539`** — the last W1 code commit
-      (later commits in the W1 PR touch only docs/VERSION/CHANGELOG, which the scope above
-      excludes). W2 modifies the same files, so an open-ended `git diff 0b2b4d2` would mix
-      W1+W2 scopes; review exactly `git diff 0b2b4d2..2985539` minus `package-lock.json`.
-      **Priority:** P1
+      — **green in CI 2026-06-08** on PR #1 head `f346a5f` (run 27136075954: npm ci → typecheck →
+      lint → test, all ✓), after the GitHub Actions billing lock was cleared. **Priority:** P0
+- [x] **Deferred cross-vendor review (Codex):** **completed 2026-06-08** — both passes ran on
+      the pinned range `git diff 0b2b4d2..2985539` minus `package-lock.json` (adversarial
+      `codex exec` + structured `codex review`, high reasoning). Both passes independently
+      flagged ONE divergence as the top finding: `verifyCompact` did not bind `kid` to the
+      RFC 7638 thumbprint (the offline verifier already did). Triaged 5 findings; 2 real ones
+      fixed + regression-tested in `f346a5f` (kid-thumbprint parity in `verifyCompact`;
+      `importPrivateJwk` x/d consistency). Others assessed already-mitigated / not-reachable /
+      W2-scope (documented in the commit + the review log). **Priority:** P1
 
 ## W2 — backend completion
 - [ ] always-200 decision contract (deny = 200, read the body) + RFC 9457 4xx for integration failures
