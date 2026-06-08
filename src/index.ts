@@ -46,7 +46,10 @@ function loadOrCreateIssuerKey(): SigningKey {
   mkdirSync(keysDir, { recursive: true });
   // Atomic write: serialize to a temp file in the SAME directory, then rename over
   // the target (renameSync is atomic on a single volume on POSIX and Windows), so a
-  // crash mid-write can never leave a half-written keystore behind.
+  // crash mid-write can never leave a half-written keystore behind. This assumes a
+  // SINGLE instance (the dev/demo model): concurrent first-boots could each mint a
+  // key and race on the rename — a multi-replica deployment would need exclusive
+  // create + read-the-winner (W2 scope).
   // mode 0o600 is POSIX-only; on Windows it is a no-op (no ACL is applied), so the
   // dev keystore there relies on .gitignore (.keys/) and a single-user machine.
   const tempPath = `${keyPath}.${process.pid}.tmp`;

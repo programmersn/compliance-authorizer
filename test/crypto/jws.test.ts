@@ -64,6 +64,17 @@ describe("JWS round-trip (node:crypto sign → node:crypto verify)", () => {
     expect(restored.kid).toBe(key.kid);
     expect(restored.did).toBe(key.did);
   });
+
+  it("rejects a keystore whose stored public x does not correspond to its private d", () => {
+    const a = generateSigningKey();
+    const b = generateSigningKey();
+    // A corrupt/hand-edited keystore: private d from key A, public x from key B.
+    // Node imports that pair WITHOUT complaint, so importPrivateJwk must fail closed —
+    // otherwise the service signs with A while publishing B's kid/DID, and every
+    // resulting envelope is unverifiable.
+    const mismatched = { ...exportPrivateJwk(a), x: b.publicJwk.x };
+    expect(() => importPrivateJwk(mismatched)).toThrow(/does not correspond/);
+  });
 });
 
 describe("jose as independent oracle (cross-implementation checks)", () => {
@@ -335,6 +346,24 @@ describe("negative-alg matrix — real attacks, all rejected", () => {
     const result = verifyEvidence({ jws, jwks: forgedJwks });
     expect(result.ok).toBe(false);
     expect(result.checks.at(-1)?.id).toBe("key-resolution");
+  });
+
+  it("verifyCompact (in-process) rejects swapped key material under a trusted kid — parity with the offline verifier", () => {
+    const honest = generateSigningKey();
+    const attacker = generateSigningKey();
+    // The real forgery: the attacker signs with their OWN key but stamps the honest
+    // kid into the header AND presents their own public key under that kid in the
+    // JWKS. The signature verifies (it IS the attacker's key), so WITHOUT the
+    // thumbprint binding the in-process verifier would accept it as "signed by
+    // honest.kid". Both cross-vendor review passes flagged this gap; the check closes it.
+    const jws = signCompact(samplePayload(), { ...attacker, kid: honest.kid });
+    const forgedJwks = { keys: [{ ...attacker.publicJwk, kid: honest.kid }] };
+    try {
+      verifyCompact(jws, forgedJwks);
+      expect.unreachable("swapped key material under a trusted kid must be rejected");
+    } catch (error) {
+      expect((error as JwsError).code).toBe("key_invalid");
+    }
   });
 });
 

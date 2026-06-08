@@ -11,6 +11,7 @@
  */
 import { createPublicKey, sign as edSign, verify as edVerify } from "node:crypto";
 import type { KeyObject } from "node:crypto";
+import { computeKid } from "./keys.ts";
 import type { PublicJwk, SigningKey } from "./keys.ts";
 
 /** The only signature algorithm this service ever produces or accepts. */
@@ -122,6 +123,17 @@ export function verifyCompact(
   if (!jwk) throw new JwsError("kid_unknown", `kid ${kid} not present in JWKS`);
   if (jwk.kty !== "OKP" || jwk.crv !== "Ed25519") {
     throw new JwsError("key_invalid", "JWKS key is not an Ed25519 OKP key");
+  }
+  // kid integrity: the kid MUST equal the key's own RFC 7638 thumbprint, so a
+  // JWKS can never present substituted key material under a trusted kid. This
+  // brings the in-process verifier to parity with the standalone offline verifier,
+  // which already enforces it (verifier/verify.mjs step 3) — the one divergence
+  // both cross-vendor review passes flagged between the two verification surfaces.
+  if (computeKid(jwk.x) !== jwk.kid) {
+    throw new JwsError(
+      "key_invalid",
+      "JWKS kid is not the key's RFC 7638 thumbprint — key material may have been swapped",
+    );
   }
 
   const keyObject = publicKeyObjectFromJwk(jwk);

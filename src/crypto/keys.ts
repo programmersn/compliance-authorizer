@@ -7,6 +7,7 @@
  */
 import {
   createPrivateKey,
+  createPublicKey,
   generateKeyPairSync,
   type KeyObject,
 } from "node:crypto";
@@ -153,6 +154,19 @@ export function importPrivateJwk(jwk: PrivateJwk): SigningKey {
     key: { kty: jwk.kty, crv: jwk.crv, x: jwk.x, d: jwk.d },
     format: "jwk",
   });
+  // Prove the stored public `x` actually corresponds to the private `d`. Node does
+  // NOT cross-check them on import (verified empirically), so a mismatched or
+  // hand-edited keystore would sign with `d` while we publish the kid/DID derived
+  // from `x` — every resulting envelope would then fail verification. Fail closed
+  // instead, in the same spirit as the loader: a bad input never loads.
+  const derivedX = (
+    createPublicKey(privateKey).export({ format: "jwk" }) as { x?: string }
+  ).x;
+  if (derivedX !== jwk.x) {
+    throw new Error(
+      "private key 'd' does not correspond to public 'x' in the stored JWK",
+    );
+  }
   const publicJwk: PublicJwk = {
     kty: "OKP",
     crv: "Ed25519",
