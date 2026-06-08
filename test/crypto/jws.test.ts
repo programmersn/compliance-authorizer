@@ -23,6 +23,8 @@ import {
   exportPrivateJwk,
   generateSigningKey,
   importPrivateJwk,
+  type PrivateJwk,
+  type PublicJwk,
   rawPublicKeyFromDidKey,
 } from "../../src/crypto/keys.ts";
 import { verifyEvidence } from "../../verifier/verify.mjs";
@@ -74,6 +76,33 @@ describe("JWS round-trip (node:crypto sign → node:crypto verify)", () => {
     // resulting envelope is unverifiable.
     const mismatched = { ...exportPrivateJwk(a), x: b.publicJwk.x };
     expect(() => importPrivateJwk(mismatched)).toThrow(/does not correspond/);
+  });
+
+  it("reads the JWK x once — a getter flipping x between reads cannot publish a kid/DID that disagrees with d", () => {
+    const a = generateSigningKey();
+    const b = generateSigningKey();
+    const jwkA = exportPrivateJwk(a);
+    // Hostile keystore: `x` reads as b.x the FIRST time, then a.x. A read-once import
+    // snapshots the first value and uses it everywhere, so the d↔x check (derivedX is
+    // a.x, from d=a) sees b.x and rejects. A read-twice import could pass the check on
+    // a later read and then publish a kid/DID that disagrees with the signing key.
+    let xReads = 0;
+    const hostile = {
+      kty: jwkA.kty,
+      crv: jwkA.crv,
+      d: jwkA.d,
+      kid: jwkA.kid,
+      alg: jwkA.alg,
+      use: jwkA.use,
+      get x(): string {
+        xReads += 1;
+        return xReads === 1 ? b.publicJwk.x : a.publicJwk.x;
+      },
+    };
+    expect(() => importPrivateJwk(hostile as unknown as PrivateJwk)).toThrow(
+      /does not correspond/,
+    );
+    expect(xReads).toBeLessThanOrEqual(1);
   });
 });
 
@@ -364,6 +393,35 @@ describe("negative-alg matrix — real attacks, all rejected", () => {
     } catch (error) {
       expect((error as JwsError).code).toBe("key_invalid");
     }
+  });
+
+  it("reads the JWKS key x once — a getter flipping x between reads cannot bypass the thumbprint binding", () => {
+    const honest = generateSigningKey();
+    const attacker = generateSigningKey();
+    // Attacker signs with their OWN key but stamps the honest kid into the header.
+    const jws = signCompact(samplePayload(), { ...attacker, kid: honest.kid });
+    // Hostile JWKS entry: `x` reads as honest.x the FIRST time (so computeKid(x)===kid
+    // passes) and attacker.x AFTERWARDS (the key the signature is checked against). A
+    // read-twice verifier would accept this as "signed by honest.kid"; read-once
+    // snapshots a single x, so the attacker's signature is checked against honest.x and
+    // fails.
+    let xReads = 0;
+    const hostile = {
+      kty: "OKP",
+      crv: "Ed25519",
+      kid: honest.kid,
+      alg: "EdDSA",
+      use: "sig",
+      get x(): string {
+        xReads += 1;
+        return xReads === 1 ? honest.publicJwk.x : attacker.publicJwk.x;
+      },
+    };
+    expectJwsError(
+      () => verifyCompact(jws, { keys: [hostile as unknown as PublicJwk] }),
+      "signature_invalid",
+    );
+    expect(xReads).toBeLessThanOrEqual(1);
   });
 });
 

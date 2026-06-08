@@ -150,8 +150,13 @@ export function exportPrivateJwk(key: SigningKey): PrivateJwk {
 
 /** Restore a SigningKey from a stored private JWK. */
 export function importPrivateJwk(jwk: PrivateJwk): SigningKey {
+  // Snapshot with a SINGLE read per field. importPrivateJwk is exported and accepts
+  // arbitrary objects, so reading jwk.x once for the d↔x integrity check and again for
+  // the published kid/DID would let a hostile getter/Proxy diverge the two (a
+  // property-read TOCTOU). Only these locals are used below.
+  const { kty, crv, x, d } = jwk;
   const privateKey = createPrivateKey({
-    key: { kty: jwk.kty, crv: jwk.crv, x: jwk.x, d: jwk.d },
+    key: { kty, crv, x, d },
     format: "jwk",
   });
   // Prove the stored public `x` actually corresponds to the private `d`. Node does
@@ -162,7 +167,7 @@ export function importPrivateJwk(jwk: PrivateJwk): SigningKey {
   const derivedX = (
     createPublicKey(privateKey).export({ format: "jwk" }) as { x?: string }
   ).x;
-  if (derivedX !== jwk.x) {
+  if (derivedX !== x) {
     throw new Error(
       "private key 'd' does not correspond to public 'x' in the stored JWK",
     );
@@ -170,8 +175,8 @@ export function importPrivateJwk(jwk: PrivateJwk): SigningKey {
   const publicJwk: PublicJwk = {
     kty: "OKP",
     crv: "Ed25519",
-    x: jwk.x,
-    kid: computeKid(jwk.x),
+    x,
+    kid: computeKid(x),
     alg: "EdDSA",
     use: "sig",
   };
@@ -179,7 +184,7 @@ export function importPrivateJwk(jwk: PrivateJwk): SigningKey {
     privateKey,
     publicJwk,
     kid: publicJwk.kid,
-    did: didKeyFromRawPublicKey(Buffer.from(jwk.x, "base64url")),
+    did: didKeyFromRawPublicKey(Buffer.from(x, "base64url")),
   };
 }
 

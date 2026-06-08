@@ -119,8 +119,21 @@ export function verifyCompact(
     throw new JwsError("malformed", "protected header must carry a non-empty kid");
   }
 
-  const jwk = jwks.keys.find((key) => key.kid === kid);
-  if (!jwk) throw new JwsError("kid_unknown", `kid ${kid} not present in JWKS`);
+  const found = jwks.keys.find((key) => key.kid === kid);
+  if (!found) throw new JwsError("kid_unknown", `kid ${kid} not present in JWKS`);
+  // Snapshot the matched key with a SINGLE read per field. verifyCompact is exported
+  // and accepts arbitrary objects, so reading jwk.x once for the thumbprint check and
+  // again when building the verifying key would let a hostile getter/Proxy present
+  // honest.x to the check and attacker.x to the key (a property-read TOCTOU). Only
+  // this snapshot — never the caller's object — is used below.
+  const jwk: PublicJwk = {
+    kty: found.kty,
+    crv: found.crv,
+    x: found.x,
+    kid: found.kid,
+    alg: found.alg,
+    use: found.use,
+  };
   if (jwk.kty !== "OKP" || jwk.crv !== "Ed25519") {
     throw new JwsError("key_invalid", "JWKS key is not an Ed25519 OKP key");
   }
