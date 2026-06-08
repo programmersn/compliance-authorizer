@@ -3,7 +3,7 @@
 Runtime compliance authorization for agentic payments. An MIT-licensed service: an AI agent's
 payment intent in → a signed **allow / deny / review** decision + cryptographic evidence envelope
 out, driven by versioned rule packs. The first pack is an uncertified synthetic Shariah profile
-(v0.1). Build spec: `DESIGN.md`. Task list: `TODO.md`.
+(v0.1). Build spec: `DESIGN.md`. Task list: `TODOS.md`.
 
 ## Architecture (locked — do not relitigate)
 - TypeScript / Node + Fastify + TypeBox (OpenAPI auto-generated from TypeBox).
@@ -31,4 +31,4 @@ out, driven by versioned rule packs. The first pack is an uncertified synthetic 
 
 ## Build sequence
 W1 crypto/API core (the CI gate) → W2 backend → W3-4 web surfaces (to `DESIGN.md` + `design/`).
-See `TODO.md`. Build W1 carefully and synchronously; the gate is the sign → offline-verify round-trip.
+See `TODOS.md`. Build W1 carefully and synchronously; the gate is the sign → offline-verify round-trip.

@@ -1,0 +1,104 @@
+{
+  "id": "shariah",
+  "version": "0.1.0",
+  "profile": "shariah-v0.1",
+  "status": "uncertified",
+  "title": "Shariah profile v0.1 — synthetic demo rule pack (UNCERTIFIED)",
+  "description": "Synthetic demo rule pack: not a fatwa / not certified / not production advice. Illustrative category-level screening only; MCC mappings are synthetic demo assignments. A certified v1.0 pack would carry scholar-reviewed rule coverage, AAOIFI standard citations in each standards_ref, and a scholar signature over this pack's hash.",
+  "required_evaluator_version": "0.1.0",
+  "default_decision": "allow",
+  "conflict_resolution": {
+    "strategy": "most_restrictive",
+    "decision_precedence": ["deny", "review", "allow"]
+  },
+  "rules": [
+    {
+      "id": "MAYSIR-MCC",
+      "reason_code": "MAYSIR",
+      "decision": "deny",
+      "title": "Gambling merchant category",
+      "description": "The merchant category code identifies a gambling, betting, lottery, or casino merchant. Maysir (gambling) is prohibited.",
+      "all_of": [
+        { "field": "merchant.mcc", "op": "in", "value": ["7995", "7800", "7801", "7802"] }
+      ],
+      "standards_ref": { "status": "pending", "note": "pending — populated on v1.0 certification" }
+    },
+    {
+      "id": "MAYSIR-ATTR",
+      "reason_code": "MAYSIR",
+      "decision": "deny",
+      "title": "Gambling exposure in merchant attributes",
+      "description": "Merchant attribute data flags gambling activity (e.g. a casino operation inside a hotel). Maysir (gambling) is prohibited even when the primary merchant category is permissible.",
+      "all_of": [
+        { "field": "merchant.attributes", "op": "includes", "value": "gambling" }
+      ],
+      "standards_ref": { "status": "pending", "note": "pending — populated on v1.0 certification" }
+    },
+    {
+      "id": "INTOXICANTS-MCC",
+      "reason_code": "INTOXICANTS",
+      "decision": "deny",
+      "title": "Alcohol merchant category",
+      "description": "The merchant category code identifies a bar, tavern, nightclub, or package store selling intoxicants. Intoxicants are prohibited.",
+      "all_of": [
+        { "field": "merchant.mcc", "op": "in", "value": ["5813", "5921"] }
+      ],
+      "standards_ref": { "status": "pending", "note": "pending — populated on v1.0 certification" }
+    },
+    {
+      "id": "INTOXICANTS-ATTR",
+      "reason_code": "INTOXICANTS",
+      "decision": "deny",
+      "title": "Intoxicant exposure in merchant attributes",
+      "description": "Merchant attribute data flags alcohol or other intoxicant sales as a material line of business.",
+      "all_of": [
+        { "field": "merchant.attributes", "op": "includes", "value": "alcohol" }
+      ],
+      "standards_ref": { "status": "pending", "note": "pending — populated on v1.0 certification" }
+    },
+    {
+      "id": "RIBA-MCC",
+      "reason_code": "RIBA",
+      "decision": "deny",
+      "title": "Interest-bearing cash advance category",
+      "description": "The merchant category code identifies a cash-disbursement facility that operates on interest-bearing credit (synthetic demo mapping). Riba (interest) is prohibited.",
+      "all_of": [
+        { "field": "merchant.mcc", "op": "in", "value": ["6010", "6011"] }
+      ],
+      "standards_ref": { "status": "pending", "note": "pending — populated on v1.0 certification" }
+    },
+    {
+      "id": "RIBA-ATTR",
+      "reason_code": "RIBA",
+      "decision": "deny",
+      "title": "Interest-bearing credit in merchant attributes",
+      "description": "Merchant attribute data flags interest-bearing credit products. Riba (interest) is prohibited.",
+      "all_of": [
+        { "field": "merchant.attributes", "op": "includes", "value": "interest-bearing-credit" }
+      ],
+      "standards_ref": { "status": "pending", "note": "pending — populated on v1.0 certification" }
+    },
+    {
+      "id": "GHARAR-ATTR",
+      "reason_code": "GHARAR",
+      "decision": "review",
+      "title": "Speculative derivative exposure",
+      "description": "Merchant or instrument attribute data flags speculative derivatives. Gharar (excessive uncertainty) requires human review rather than automated approval.",
+      "all_of": [
+        { "field": "merchant.attributes", "op": "includes", "value": "speculative-derivatives" }
+      ],
+      "standards_ref": { "status": "pending", "note": "pending — populated on v1.0 certification" }
+    },
+    {
+      "id": "MIXED-REVENUE",
+      "reason_code": "MIXED_REVENUE",
+      "decision": "review",
+      "title": "Mixed impermissible revenue share above demo threshold",
+      "description": "Screening data reports an impermissible revenue share at or above the synthetic demo threshold of 5%. The threshold is illustrative, not a certified screening standard; the case is routed to human review.",
+      "all_of": [
+        { "field": "screening.mixed_revenue_ratio", "op": "gte", "value": 0.05 }
+      ],
+      "standards_ref": { "status": "pending", "note": "pending — populated on v1.0 certification" }
+    }
+  ]
+}
