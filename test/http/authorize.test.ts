@@ -7,7 +7,7 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, describe, expect, it } from "vitest";
-import { buildJwks, generateSigningKey } from "../../src/crypto/keys.ts";
+import { buildJwks, computeKid, generateSigningKey } from "../../src/crypto/keys.ts";
 import { verifyCompact } from "../../src/crypto/jws.ts";
 import { loadRulePackFile } from "../../src/rules/loader.ts";
 import { buildServer } from "../../src/server.ts";
@@ -275,5 +275,106 @@ describe("boot guards", () => {
     expect(() =>
       buildServer({ loadedPacks: [loadedPack, loadedPack], signingKey }),
     ).toThrow(/duplicate rule-pack profile/);
+  });
+
+  it("refuses duplicate rule-pack id/version even across distinct profiles", () => {
+    // The duplicate-profile guard runs FIRST and trips on identical packs, so use a
+    // DIFFERENT profile carrying the SAME id+version: the profile guard passes and
+    // execution reaches the SEPARATE id/version guard (a distinct boot failure with
+    // its own message). Two distinct profiles legitimately sharing an id/version is
+    // exactly the case the id/version index in server.ts guards against.
+    const second = {
+      ...loadedPack,
+      pack: { ...loadedPack.pack, profile: "shariah-v0.1-alt" },
+    };
+    expect(() =>
+      buildServer({ loadedPacks: [loadedPack, second], signingKey }),
+    ).toThrow(/duplicate rule-pack id\/version/);
+  });
+
+  it("refuses a published JWK whose kid is not its RFC 7638 thumbprint (fail closed, never serve swapped key material)", () => {
+    const tamperedKey = { ...signingKey.publicJwk, kid: "not-a-thumbprint" };
+    expect(() =>
+      buildServer({
+        loadedPacks: [loadedPack],
+        signingKey,
+        publishedKeys: [tamperedKey],
+      }),
+    ).toThrow(/not a valid Ed25519 signing key whose kid is its RFC 7638 thumbprint/);
+  });
+
+  it("refuses a published JWK that is not an Ed25519 OKP signing key (fail closed)", () => {
+    // x/kid are internally consistent, but kty/crv/alg/use are wrong — the JWKS
+    // endpoint would otherwise coerce them to the schema literals and publish a
+    // non-Ed25519 key as if it were one. Boot must reject it.
+    const wrongType = { ...signingKey.publicJwk, crv: "X25519" as "Ed25519" };
+    expect(() =>
+      buildServer({
+        loadedPacks: [loadedPack],
+        signingKey,
+        publishedKeys: [wrongType],
+      }),
+    ).toThrow(/not a valid Ed25519 signing key/);
+  });
+
+  it("refuses a published JWK whose x is not an importable Ed25519 key (thumbprint-consistent but unusable)", () => {
+    // kid IS the RFC 7638 thumbprint of this x, so the structural + thumbprint
+    // guard passes — but x is not a valid Ed25519 public key, so an independent
+    // verifier could never import it. Boot must reject it, not publish a dud key
+    // that only fails downstream at verification time.
+    const bogusX = "AAAA"; // not a 32-byte Ed25519 point — createPublicKey throws
+    const unusable = {
+      kty: "OKP" as const,
+      crv: "Ed25519" as const,
+      x: bogusX,
+      kid: computeKid(bogusX),
+      alg: "EdDSA" as const,
+      use: "sig" as const,
+    };
+    expect(() =>
+      buildServer({
+        loadedPacks: [loadedPack],
+        signingKey,
+        // signer included, so this trips the import guard (which runs first),
+        // not the signer-in-set guard below.
+        publishedKeys: [unusable, signingKey.publicJwk],
+      }),
+    ).toThrow(/not an importable Ed25519 public key/);
+  });
+
+  it("refuses to boot when the live signer's key is NOT in publishedKeys (its decisions would fail the engine's own JWKS)", () => {
+    // A rotation set that forgot the current signer. /authorize would sign with
+    // `signingKey`, but JWKS + /verify resolve keys from publishedKeys — so every
+    // freshly-issued envelope would fail this engine's own verification path.
+    const otherKey = generateSigningKey().publicJwk; // valid, but not the signer
+    expect(() =>
+      buildServer({
+        loadedPacks: [loadedPack],
+        signingKey,
+        publishedKeys: [otherKey],
+      }),
+    ).toThrow(/live signing key .* is not among publishedKeys/);
+  });
+
+  it("snapshots publishedKeys at boot — a post-boot mutation of the caller's object cannot change what JWKS serves", async () => {
+    // Codex review #1: the boot guards validate publishedKeys once, but the routes
+    // re-read the set on every request. buildServer freezes a PROJECTED snapshot at
+    // boot, so a post-boot edit to the caller's object can never publish key
+    // material the boot guards never validated (here, an unimportable `x`).
+    const live = { ...signingKey.publicJwk }; // a mutable copy the caller still holds
+    const originalX = live.x;
+    const app = buildServer({ loadedPacks: [loadedPack], signingKey, publishedKeys: [live] });
+    try {
+      await app.ready();
+      live.x = "tampered-after-boot"; // would be unimportable if the route read it live
+      const response = await app.inject({ method: "GET", url: "/.well-known/jwks.json" });
+      expect(response.statusCode).toBe(200);
+      const body = response.json<{ keys: { kid: string; x: string }[] }>();
+      // Exactly the boot-time bytes are served — the mutation did not leak through.
+      expect(body.keys).toHaveLength(1);
+      expect(body.keys[0]?.x).toBe(originalX);
+    } finally {
+      await app.close();
+    }
   });
 });

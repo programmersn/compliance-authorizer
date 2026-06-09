@@ -3,6 +3,77 @@
 All notable changes to this project are documented in this file.
 Versions follow a 4-digit MAJOR.MINOR.PATCH.MICRO scheme; dates are YYYY-MM-DD.
 
+## [0.2.0.0] - 2026-06-09
+
+### Added
+
+- `GET /.well-known/jwks.json` (RFC 7517): publishes every historical public verifying key,
+  so any envelope ever signed by this engine stays offline-verifiable by `kid` across key
+  rotation. Public keys only — the private `d` never reaches the wire.
+- `GET /rule-packs/:id/:version`: serves the exact canonical rule-pack bytes a given envelope
+  was decided against; `sha256` of the response body round-trips to the envelope's
+  `rule_pack_hash`. A miss is RFC 9457 problem+json (404), never a decision artifact.
+- `POST /verify`: submit an evidence artifact and get a verification verdict. A well-formed
+  request is ALWAYS HTTP 200 — `valid:false` (inauthentic artifact) is a verdict, never a 4xx;
+  a malformed request is 400 problem+json with no verdict (error ≠ deny on the verification
+  path too). Reuses the standalone offline verifier, so the server surface and the offline
+  path can never disagree on a verdict.
+- Reproducible-decision replay (`scripts/replay.ts`) keyed on `rule_pack_hash` +
+  `evaluator_version` + `intent_hash`, plus `REPRODUCIBILITY.md` and self-contained
+  `examples/` (artifact, JWKS, pack) that round-trip through the offline verifier.
+
+### Security
+
+- JWS signature-segment malleability closed on BOTH independent verifiers
+  (`verifier/verify.mjs` and `src/crypto/jws.ts`): each base64url segment must be canonical
+  and unpadded (decode/re-encode round-trip equality), and the signature must decode to exactly
+  64 bytes. A byte-different re-encoding of a valid artifact (trailing `=` padding, a
+  non-canonical final character) no longer verifies as valid evidence — one decision has
+  exactly one valid artifact string.
+- JWKS publish boundary hardened: `assertPublishableJwk` rejects any published key whose `x`
+  is not an importable Ed25519 point (not merely thumbprint-consistent); `buildJwks` projects
+  every key to its six public members so the no-private-`d` guarantee holds at the data layer,
+  not only at the response schema; the published key set is snapshotted and frozen at boot, so
+  a post-boot mutation cannot change what JWKS and `/verify` serve.
+- Boot guard: the live signing key must be among the published keys, or the engine refuses to
+  boot — its decisions would otherwise fail its own JWKS and `/verify`.
+- `POST /verify` reports `issuer: null` on an inauthentic artifact, never surfacing a
+  claimed-but-unverified identity (mirrors the offline CLI).
+
+### Fixed
+
+- Offline decision replay (`scripts/replay.ts`) now classifies an artifact whose cited pack pins a
+  different `evaluator_version` as a reproducibility verdict (`reproduced:null`, "replay could not be
+  attempted", exit 1) instead of an operator/input error (exit 2). The loader's D12 evaluator-version
+  assertion is now opt-out, so the replay tool validates and hashes a foreign-evaluator pack and lets
+  `replayEnvelope` classify it; the `rule_pack_hash` content guard is unchanged, so a wrong or
+  tampered pack is still rejected.
+- Both verifiers (`verifier/verify.mjs` and `src/crypto/jws.ts`) now snapshot the matched JWKS key with
+  a single read per field AND bind the snapshot `kid` to the protected-header `kid` (already matched at
+  lookup), rather than re-reading the entry's `x`/`kid`. The verifiers read the key's `x` and `kid` more
+  than once (lookup, thumbprint, did:key, signature), so a hostile in-process getter/Proxy could have
+  presented honest values at the `kid`==thumbprint check and attacker values at signature verification
+  — a property-read TOCTOU that let an artifact verify under a key whose `kid` disagreed with the one it
+  claims. Not reachable through the route or CLI (both pass plain JSON), but the verifiers are
+  independently importable, so both are brought to parity. Regression-tested (x-flip and kid-flip) on
+  both.
+- `src/crypto/jws.ts` `verifyCompact` now tolerates a malformed (null / non-object) JWKS entry the same
+  way the offline verifier does — skipping it and returning a `kid_unknown` `JwsError` rather than a raw
+  `TypeError` — honoring its "JwsError on any defect" contract and keeping the two verifiers in lockstep.
+- `verifier/verify.mjs` now populates the returned `issuer` only AFTER the Ed25519 signature verifies,
+  so the exported `verifyEvidence` never returns a non-null `issuer` alongside an invalid signature (it
+  stays set when a later, non-signature check fails — the signer is genuine there). The `POST /verify`
+  route already suppressed this; the fix closes it at the exported API and corrects the `verify.d.mts`
+  type doc.
+- The shared AJV validation problem renderer (`src/http/problem.ts`) is now request-body-agnostic
+  ("Request body failed schema validation"), so a malformed `POST /verify` body no longer returns the
+  `/authorize`-specific "not a valid payment intent" message. The per-field `issues` array is unchanged.
+
+### Notes
+
+- The UNCERTIFIED marker remains unavoidable on every served surface: synthetic demo rule pack
+  — not a fatwa, not certified, not production advice. No LLM in the decision path.
+
 ## [0.1.0.0] - 2026-06-05
 
 ### Added

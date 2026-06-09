@@ -80,6 +80,18 @@ const sha256Hex = (/** @type {string|Buffer} */ data) =>
 
 const b64urlDecode = (/** @type {string} */ text) => Buffer.from(text, "base64url");
 
+// RFC 7515 base64url segments are canonical and UNPADDED. Node's base64url
+// decoder is lenient: it ignores `=` padding and the low "don't-care" bits of a
+// segment's final character, so MANY distinct strings decode to the same bytes.
+// For the signature segment — the one segment the signature itself cannot cover —
+// that is malleability: from ANY valid artifact an attacker can mint byte-different
+// ones that all still verify. Reject every non-canonical encoding by requiring each
+// segment to round-trip exactly: decode, then re-encode, must reproduce the input.
+// (The payload is independently pinned by the canonical-form check and the header
+// by the signature; this brings the signature segment up to the same standard.)
+const isCanonicalB64url = (/** @type {string} */ text) =>
+  Buffer.from(text, "base64url").toString("base64url") === text;
+
 // did:key encoding of the VERIFYING key (multicodec ed25519-pub 0xed01,
 // multibase base58btc) — printed so the operator can compare the fingerprint
 // against the issuer's out-of-band published did:key. A signature verifier can
@@ -134,12 +146,24 @@ export function verifyEvidence({ jws, jwks, pack }) {
   };
   const pass = (id, title, detail) => checks.push({ id, title, ok: true, detail });
 
-  // 1. Structure
-  const parts = typeof jws === "string" ? jws.trim().split(".") : [];
+  // 1. Structure. The artifact is the EXACT compact JWS. Surrounding whitespace is
+  // file framing, NOT part of the evidence, and is not stripped here — so `artifact`
+  // and `artifact + "\n"` are never treated as the same JWS. This keeps the verifier
+  // in lockstep with verifyCompact (src/crypto/jws.ts), which also never trims; the
+  // CLI tolerates a file's trailing newline by trimming at the I/O boundary instead.
+  const parts = typeof jws === "string" ? jws.split(".") : [];
   if (parts.length !== 3 || parts.some((part) => part.length === 0)) {
     return fail("structure", "JWS-compact structure", "expected 3 non-empty dot-separated segments");
   }
   const [headerB64, payloadB64, signatureB64] = parts;
+  // Reject non-canonical base64url BEFORE any key material is touched: padding, a
+  // non-canonical final character, or stray characters (surrounding whitespace lands
+  // INSIDE a segment) are all rejected here, so an artifact cannot be malleated into
+  // a byte-different string that still verifies.
+  if (!parts.every(isCanonicalB64url)) {
+    return fail("structure", "JWS-compact structure",
+      "a segment is not canonical unpadded base64url (RFC 7515) — non-canonical encodings are rejected as malleable");
+  }
   let header;
   try {
     header = JSON.parse(b64urlDecode(headerB64).toString("utf8"));
@@ -169,10 +193,22 @@ export function verifyEvidence({ jws, jwks, pack }) {
 
   // 3. Key resolution + kid integrity (kid must BE the RFC 7638 thumbprint).
   const keys = Array.isArray(jwks?.keys) ? jwks.keys : [];
-  const jwk = keys.find((key) => key && typeof key === "object" && key.kid === header.kid);
-  if (!jwk) {
+  const found = keys.find((key) => key && typeof key === "object" && key.kid === header.kid);
+  if (!found) {
     return fail("key-resolution", "Issuer key resolution", `kid ${header.kid} not found in the provided JWKS`);
   }
+  // Snapshot the matched key with a SINGLE read per field. verifyEvidence is
+  // EXPORTED and accepts arbitrary objects, so reading `found.x` once for the
+  // thumbprint and again to build the verifying key would let a hostile getter/
+  // Proxy present an honest x to the kid==thumbprint check and an attacker x to
+  // the signature (a property-read TOCTOU → key substitution under a trusted
+  // kid). Use ONLY this snapshot below — never the caller's object. The kid is
+  // bound to the PROTECTED-HEADER kid (already matched at find), NOT a second read
+  // of found.kid: a hostile kid getter could otherwise return the header kid at
+  // find and an attacker kid here, and the thumbprint check would bind x to the
+  // attacker kid — verifying under a key whose kid disagrees with the artifact's.
+  // Mirrors verifyCompact's per-key snapshot in src/crypto/jws.ts.
+  const jwk = { kty: found.kty, crv: found.crv, x: found.x, kid: header.kid };
   if (jwk.kty !== "OKP" || jwk.crv !== "Ed25519" || typeof jwk.x !== "string") {
     return fail("key-resolution", "Issuer key resolution", "JWKS key is not an Ed25519 OKP key");
   }
@@ -183,7 +219,6 @@ export function verifyEvidence({ jws, jwks, pack }) {
     return fail("key-resolution", "Issuer key resolution",
       "JWKS kid does not match the key's RFC 7638 thumbprint — key material may have been swapped");
   }
-  issuer = { kid: jwk.kid, did: didKeyFromJwkX(jwk.x) };
   pass("key-resolution", "Issuer key resolution", `kid resolves to an Ed25519 key; RFC 7638 thumbprint matches`);
 
   // 4. Signature
@@ -193,15 +228,27 @@ export function verifyEvidence({ jws, jwks, pack }) {
   } catch {
     return fail("signature", "Ed25519 signature", "public key could not be imported");
   }
+  const signatureBytes = b64urlDecode(signatureB64);
+  if (signatureBytes.length !== 64) {
+    return fail("signature", "Ed25519 signature",
+      "signature segment does not decode to exactly 64 bytes (Ed25519)");
+  }
   const signatureValid = ed25519Verify(
     null,
     Buffer.from(`${headerB64}.${payloadB64}`, "utf8"),
     publicKey,
-    b64urlDecode(signatureB64),
+    signatureBytes,
   );
   if (!signatureValid) {
     return fail("signature", "Ed25519 signature", "signature does NOT verify — the evidence has been tampered with or was not issued by this key");
   }
+  // Populate `issuer` ONLY now that the signature has verified — never at key
+  // resolution above. `issuer` names the key that ACTUALLY signed these bytes, so
+  // a signature failure must leave it null (the exported API never surfaces a
+  // claimed-but-unverified identity). A LATER non-signature check may still fail
+  // (e.g. a non-envelope payload); the signer is genuine there, so issuer stays
+  // set — that is the independent-encoder fingerprint the tests assert.
+  issuer = { kid: jwk.kid, did: didKeyFromJwkX(jwk.x) };
   pass("signature", "Ed25519 signature", "signature verifies over the protected header + payload");
 
   // 5. Canonical form — the payload must BE its own RFC 8785 form.
@@ -298,7 +345,9 @@ function main() {
   // file means nothing was verified, and the exit code must not say otherwise.
   let jws, jwks, pack;
   try {
-    jws = readFileSync(values.evidence, "utf8");
+    // Trim file framing (e.g. a trailing newline) at the I/O boundary — it is not
+    // part of the evidence artifact. The verifier itself treats its input as exact.
+    jws = readFileSync(values.evidence, "utf8").trim();
     jwks = JSON.parse(readFileSync(values.jwks, "utf8"));
     pack = values.pack ? JSON.parse(readFileSync(values.pack, "utf8")) : undefined;
   } catch (error) {

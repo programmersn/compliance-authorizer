@@ -423,6 +423,221 @@ describe("negative-alg matrix — real attacks, all rejected", () => {
     );
     expect(xReads).toBeLessThanOrEqual(1);
   });
+
+  it("binds the snapshot kid to the protected header — a kid-flipping getter cannot rebind the verifying key", () => {
+    const honest = generateSigningKey();
+    const attacker = generateSigningKey();
+    // Artifact signed by the ATTACKER, header kid = honest.kid.
+    const jws = signCompact(samplePayload(), { ...attacker, kid: honest.kid });
+    // Hostile entry: kid reads honest.kid at find() (matching the header) then
+    // attacker.kid afterwards; x is the attacker's. A verifier that re-reads the
+    // entry's kid into the snapshot would thumbprint attacker.x against attacker.kid
+    // (self-consistent) and verify the attacker's signature — accepting an artifact
+    // under a key whose kid != the header's. Binding the snapshot kid to the header
+    // kid rejects it: computeKid(attacker.x) != honest.kid.
+    let kidReads = 0;
+    const hostile = {
+      kty: "OKP",
+      crv: "Ed25519",
+      x: attacker.publicJwk.x,
+      alg: "EdDSA",
+      use: "sig",
+      get kid(): string {
+        kidReads += 1;
+        return kidReads === 1 ? honest.kid : attacker.kid;
+      },
+    };
+    expectJwsError(
+      () => verifyCompact(jws, { keys: [hostile as unknown as PublicJwk] }),
+      "key_invalid",
+    );
+  });
+
+  it("skips a malformed (null) JWKS entry and throws JwsError, never a raw TypeError — parity with verifyEvidence", () => {
+    const key = generateSigningKey();
+    const jws = signCompact(samplePayload(), key);
+    // A null entry before the valid key: the guarded find skips it (mirrors verify.mjs),
+    // so a real matching key still resolves and verifies.
+    expect(() =>
+      verifyCompact(jws, { keys: [null as unknown as PublicJwk, key.publicJwk] }),
+    ).not.toThrow();
+    // A JWKS carrying ONLY a malformed entry yields kid_unknown (a JwsError), not a
+    // raw TypeError from reading `.kid` off null — honoring "JwsError on ANY defect".
+    expectJwsError(
+      () => verifyCompact(jws, { keys: [null as unknown as PublicJwk] }),
+      "kid_unknown",
+    );
+  });
+});
+
+describe("signature-segment malleability — byte-different artifacts are rejected", () => {
+  // The signature segment is the ONE segment the signature cannot cover. Node's
+  // base64url decoder ignores `=` padding and a final character's 4 low
+  // "don't-care" bits, so from any valid artifact an attacker can mint
+  // byte-DIFFERENT strings whose signature segment decodes to the same 64 bytes —
+  // all of which would otherwise verify. One valid decision would then have many
+  // valid artifact strings, a malleability for anything that keys on the artifact
+  // bytes (dedup / idempotency / replay). Both verifiers reject every such variant.
+
+  /** A DIFFERENT final base64url char that decodes the signature to identical bytes. */
+  const nonCanonicalFinalChar = (sig: string): string => {
+    const bytes = Buffer.from(sig, "base64url");
+    const alphabet =
+      "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+    for (const c of alphabet) {
+      if (c === sig[sig.length - 1]) continue;
+      const candidate = sig.slice(0, -1) + c;
+      if (Buffer.from(candidate, "base64url").equals(bytes)) return candidate;
+    }
+    throw new Error("no equivalent final base64url char found (unexpected)");
+  };
+
+  it("verifyCompact rejects a signature segment carrying `=` padding (same decoded bytes)", () => {
+    const key = generateSigningKey();
+    const [h, p, s] = signCompact(samplePayload(), key).split(".") as [string, string, string];
+    expectJwsError(() => verifyCompact(`${h}.${p}.${s}=`, buildJwks([key.publicJwk])), "malformed");
+  });
+
+  it("verifyCompact rejects a non-canonical final signature character (same decoded bytes)", () => {
+    const key = generateSigningKey();
+    const jws = signCompact(samplePayload(), key);
+    const [h, p, s] = jws.split(".") as [string, string, string];
+    const malleated = `${h}.${p}.${nonCanonicalFinalChar(s)}`;
+    expect(malleated).not.toBe(jws); // genuinely byte-different…
+    // …yet the signature segment decodes to identical bytes, so this is malleability, not corruption.
+    expect(Buffer.from(malleated.split(".")[2]!, "base64url").equals(Buffer.from(s, "base64url"))).toBe(true);
+    expectJwsError(() => verifyCompact(malleated, buildJwks([key.publicJwk])), "malformed");
+  });
+
+  it("verifyCompact rejects a canonically-encoded but wrong-length (65-byte) signature", () => {
+    const key = generateSigningKey();
+    const [h, p, s] = signCompact(samplePayload(), key).split(".") as [string, string, string];
+    const longSig = b64url(Buffer.concat([Buffer.from(s, "base64url"), Buffer.from([0])]));
+    expectJwsError(() => verifyCompact(`${h}.${p}.${longSig}`, buildJwks([key.publicJwk])), "signature_invalid");
+  });
+
+  it("the offline verifier rejects the SAME malleations — parity with verifyCompact", () => {
+    const key = generateSigningKey();
+    const [h, p, s] = signCompact(samplePayload(), key).split(".") as [string, string, string];
+    const jwks = buildJwks([key.publicJwk]);
+
+    // Non-canonical base64url is caught at the FIRST check (structure), before any key material.
+    for (const malleated of [`${h}.${p}.${s}=`, `${h}.${p}.${nonCanonicalFinalChar(s)}`]) {
+      const result = verifyEvidence({ jws: malleated, jwks });
+      expect(result.ok).toBe(false);
+      expect(result.checks.at(-1)?.id).toBe("structure");
+    }
+    // A 65-byte signature IS canonical base64url, so it passes structure and is
+    // caught at the signature length gate instead — same verdict, different gate.
+    const longSig = b64url(Buffer.concat([Buffer.from(s, "base64url"), Buffer.from([0])]));
+    const longResult = verifyEvidence({ jws: `${h}.${p}.${longSig}`, jwks });
+    expect(longResult.ok).toBe(false);
+    expect(longResult.checks.find((c) => c.id === "signature")?.ok).toBe(false);
+  });
+
+  it("both verifiers reject a whitespace-WRAPPED artifact identically — file framing is not the evidence", () => {
+    const key = generateSigningKey();
+    const jws = signCompact(samplePayload(), key);
+    const jwks = buildJwks([key.publicJwk]);
+    // A trailing newline or surrounding spaces make a byte-different string. The pure
+    // verifier treats its input as EXACT (the CLI trims file framing at the I/O
+    // boundary instead), so neither surface accepts these — and crucially they AGREE,
+    // preserving the invariant that the in-process and offline verifiers never disagree
+    // on a verdict. (Before the fix, verifyEvidence trimmed and verifyCompact did not.)
+    for (const wrapped of [`${jws}\n`, ` ${jws}`, `${jws} `]) {
+      expectJwsError(() => verifyCompact(wrapped, jwks), "malformed");
+      const result = verifyEvidence({ jws: wrapped, jwks });
+      expect(result.ok).toBe(false);
+      expect(result.checks.at(-1)?.id).toBe("structure");
+    }
+  });
+
+  it("the genuine canonical artifact still verifies on both surfaces (positive control)", () => {
+    const key = generateSigningKey();
+    const jws = signCompact(samplePayload(), key);
+    expect(() => verifyCompact(jws, buildJwks([key.publicJwk]))).not.toThrow();
+    // verifyEvidence reaches envelope-shape (samplePayload is not a full envelope),
+    // but every crypto check up to and including the signature passed.
+    const result = verifyEvidence({ jws, jwks: buildJwks([key.publicJwk]) });
+    expect(result.checks.find((c) => c.id === "signature")?.ok).toBe(true);
+  });
+});
+
+describe("offline verifier — JWK read-once snapshot + issuer gating (parity with verifyCompact)", () => {
+  it("reads the JWKS key x at most once — a getter flipping x cannot bypass the thumbprint binding", () => {
+    const honest = generateSigningKey();
+    const attacker = generateSigningKey();
+    // Attacker signs with their OWN key but stamps the honest kid into the header.
+    const jws = signCompact(samplePayload(), { ...attacker, kid: honest.kid });
+    // Hostile JWKS entry: x reads as honest.x the FIRST time (so computeKid(x)===kid
+    // passes) and attacker.x afterwards (the key a read-twice verifier would check
+    // the signature against). A read-once snapshot consumes x exactly once, so the
+    // flip never takes effect — parity with verifyCompact's per-key snapshot.
+    let xReads = 0;
+    const hostile = {
+      kty: "OKP",
+      crv: "Ed25519",
+      kid: honest.kid,
+      alg: "EdDSA",
+      use: "sig",
+      get x(): string {
+        xReads += 1;
+        return xReads === 1 ? honest.publicJwk.x : attacker.publicJwk.x;
+      },
+    };
+    const result = verifyEvidence({ jws, jwks: { keys: [hostile] } });
+    expect(xReads).toBeLessThanOrEqual(1);
+    expect(result.ok).toBe(false);
+    // The attacker's signature is checked against the snapshotted honest.x → fails.
+    expect(result.checks.find((c) => c.id === "signature")?.ok).toBe(false);
+    // No issuer leaks on the failure (populated only after the signature verifies).
+    expect(result.issuer).toBeNull();
+  });
+
+  it("returns issuer:null on a bad signature — the exported API never names a key that did not sign these bytes", () => {
+    const key = generateSigningKey();
+    const [h, p, s] = signCompact(samplePayload(), key).split(".") as [string, string, string];
+    // Flip a char in the MIDDLE of the signature segment (tail bits can alias to the
+    // same bytes; the middle cannot) — a genuinely wrong but canonical 64-byte sig.
+    const mid = Math.floor(s.length / 2);
+    const badSig = `${s.slice(0, mid)}${s[mid] === "A" ? "B" : "A"}${s.slice(mid + 1)}`;
+    const result = verifyEvidence({
+      jws: `${h}.${p}.${badSig}`,
+      jwks: buildJwks([key.publicJwk]),
+    });
+    expect(result.ok).toBe(false);
+    expect(result.checks.find((c) => c.id === "signature")?.ok).toBe(false);
+    // key-resolution passed (the kid is published), proving the issuer WAS
+    // recoverable — it is null by DESIGN (the signature failed), not by accident.
+    expect(result.checks.find((c) => c.id === "key-resolution")?.ok).toBe(true);
+    expect(result.issuer).toBeNull();
+  });
+
+  it("binds the snapshot kid to the protected header — a kid-flipping getter cannot rebind the verifying key", () => {
+    const honest = generateSigningKey();
+    const attacker = generateSigningKey();
+    const jws = signCompact(samplePayload(), { ...attacker, kid: honest.kid });
+    // kid reads honest.kid at find() (matches the header) then attacker.kid after;
+    // x is the attacker's. Binding the snapshot kid to the header kid forces
+    // computeKid(attacker.x) != honest.kid, so key-resolution fails — the verifier
+    // never checks the signature against a key the header did not select.
+    let kidReads = 0;
+    const hostile = {
+      kty: "OKP",
+      crv: "Ed25519",
+      x: attacker.publicJwk.x,
+      alg: "EdDSA",
+      use: "sig",
+      get kid(): string {
+        kidReads += 1;
+        return kidReads === 1 ? honest.kid : attacker.kid;
+      },
+    };
+    const result = verifyEvidence({ jws, jwks: { keys: [hostile] } });
+    expect(result.ok).toBe(false);
+    expect(result.checks.find((c) => c.id === "key-resolution")?.ok).toBe(false);
+    expect(result.issuer).toBeNull();
+  });
 });
 
 describe("did:key encoding", () => {
@@ -430,8 +645,9 @@ describe("did:key encoding", () => {
     const key = generateSigningKey();
     const jws = signCompact(samplePayload(), key);
     const result = verifyEvidence({ jws, jwks: buildJwks([key.publicJwk]) });
-    // verifyEvidence fails later checks (payload is not a full envelope), but
-    // key resolution succeeded — the issuer fingerprint must already be set.
+    // verifyEvidence fails a LATER check (samplePayload is not a full envelope),
+    // but the signature verified — issuer is populated right after the signature
+    // check, so the fingerprint is already set on this content-only failure.
     expect(result.issuer).toEqual({ kid: key.kid, did: key.did });
   });
 

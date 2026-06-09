@@ -42,6 +42,19 @@ function b64url(data: Uint8Array | string): string {
   return Buffer.from(data).toString("base64url");
 }
 
+/**
+ * RFC 7515 base64url segments are canonical and UNPADDED. Node's decoder ignores
+ * `=` padding and a final character's low "don't-care" bits, so many distinct
+ * strings decode to the same bytes. For the signature segment — the one segment
+ * the signature itself cannot cover — that is malleability: byte-different
+ * artifacts that all verify. Require each segment to round-trip exactly (decode,
+ * then re-encode, must reproduce it). Kept in lockstep with the offline verifier
+ * (verifier/verify.mjs), so the two verification surfaces never disagree.
+ */
+function isCanonicalB64url(text: string): boolean {
+  return Buffer.from(text, "base64url").toString("base64url") === text;
+}
+
 /** Sign payload bytes into a JWS-compact string with protected header {alg, kid}. */
 export function signCompact(payload: Uint8Array, key: SigningKey): string {
   const protectedHeader = { alg: EVIDENCE_JWS_ALG, kid: key.kid };
@@ -85,6 +98,16 @@ export function verifyCompact(
   if (headerB64 === "" || payloadB64 === "" || signatureB64 === "") {
     throw new JwsError("malformed", "JWS-compact has an empty segment");
   }
+  // Reject non-canonical base64url (padding, a non-canonical final character) so
+  // the signature segment — the only segment the signature cannot cover — cannot
+  // be malleated into a byte-different artifact that still verifies.
+  if (
+    !isCanonicalB64url(headerB64) ||
+    !isCanonicalB64url(payloadB64) ||
+    !isCanonicalB64url(signatureB64)
+  ) {
+    throw new JwsError("malformed", "a JWS segment is not canonical unpadded base64url (RFC 7515)");
+  }
 
   let headerValue: unknown;
   try {
@@ -119,18 +142,29 @@ export function verifyCompact(
     throw new JwsError("malformed", "protected header must carry a non-empty kid");
   }
 
-  const found = jwks.keys.find((key) => key.kid === kid);
+  // Tolerate a malformed (null/undefined) JWKS entry instead of throwing a raw
+  // TypeError on `.kid` access: verifyCompact promises a JwsError on ANY defect and
+  // accepts arbitrary caller objects (mirrors verifier/verify.mjs's guarded find).
+  // A non-conforming entry is skipped; an unmatched kid then yields kid_unknown.
+  const found = (jwks.keys as readonly (PublicJwk | null | undefined)[]).find(
+    (key) => key != null && key.kid === kid,
+  );
   if (!found) throw new JwsError("kid_unknown", `kid ${kid} not present in JWKS`);
   // Snapshot the matched key with a SINGLE read per field. verifyCompact is exported
   // and accepts arbitrary objects, so reading jwk.x once for the thumbprint check and
   // again when building the verifying key would let a hostile getter/Proxy present
   // honest.x to the check and attacker.x to the key (a property-read TOCTOU). Only
-  // this snapshot — never the caller's object — is used below.
+  // this snapshot — never the caller's object — is used below. The kid is bound to
+  // the PROTECTED-HEADER kid (already matched at find), NOT a second read of
+  // found.kid: a hostile kid getter could otherwise return the header kid at find and
+  // an attacker kid here, and the thumbprint check below would then bind x to the
+  // attacker kid — verifying under a key whose kid disagrees with the one the
+  // artifact claims. Using the header kid forces computeKid(x) to equal that claim.
   const jwk: PublicJwk = {
     kty: found.kty,
     crv: found.crv,
     x: found.x,
-    kid: found.kid,
+    kid,
     alg: found.alg,
     use: found.use,
   };
@@ -152,6 +186,9 @@ export function verifyCompact(
   const keyObject = publicKeyObjectFromJwk(jwk);
   const signingInput = encoder.encode(`${headerB64}.${payloadB64}`);
   const signature = Buffer.from(signatureB64, "base64url");
+  if (signature.length !== 64) {
+    throw new JwsError("signature_invalid", "Ed25519 signature is not exactly 64 bytes");
+  }
   if (!edVerify(null, signingInput, keyObject, signature)) {
     throw new JwsError("signature_invalid", "Ed25519 signature verification failed");
   }
