@@ -31,6 +31,14 @@ All W2 deliverables shipped in **v0.2.0.0 (2026-06-09)** — see Completed.
       checking authenticity (by design, and loudly labelled). Consider a distinct non-zero status
       (or requiring `--jwks` + a verify pass) so automation consuming only the exit code cannot
       confuse "payload re-derived" with "valid evidence re-derived." **Priority:** P3
+- [ ] RFC 8785 lone-surrogate handling — both canonicalizers (`src/crypto/canonicalize.ts` and
+      `verifier/verify.mjs`) serialize strings via `JSON.stringify`, which ESCAPES lone surrogates
+      (ES2019 well-formed stringify) rather than rejecting them. Verify whether strict RFC 8785
+      requires invalid-Unicode input to FAIL; if so, reject lone surrogates at the canonicalization
+      boundary (or validate intent strings at `/authorize`). Both verifiers AGREE today (not a
+      forgery); the only risk is that a strict external JCS verifier could reject a signed artifact
+      carrying a lone surrogate. Pre-existing (W1 `canonicalize.ts`, unchanged by W2); surfaced by the
+      v0.2.0.0 cross-vendor review — candidate for `/deep-research` on the RFC requirement. **Priority:** P3
 
 ## W3-4 — web surfaces (build to DESIGN.md + design/ mockups)
 - [ ] T-D1 evidence viewer (match `design/evidence-viewer-chosen.html`)
