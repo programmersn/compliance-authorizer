@@ -425,6 +425,99 @@ describe("negative-alg matrix — real attacks, all rejected", () => {
   });
 });
 
+describe("signature-segment malleability — byte-different artifacts are rejected", () => {
+  // The signature segment is the ONE segment the signature cannot cover. Node's
+  // base64url decoder ignores `=` padding and a final character's 4 low
+  // "don't-care" bits, so from any valid artifact an attacker can mint
+  // byte-DIFFERENT strings whose signature segment decodes to the same 64 bytes —
+  // all of which would otherwise verify. One valid decision would then have many
+  // valid artifact strings, a malleability for anything that keys on the artifact
+  // bytes (dedup / idempotency / replay). Both verifiers reject every such variant.
+
+  /** A DIFFERENT final base64url char that decodes the signature to identical bytes. */
+  const nonCanonicalFinalChar = (sig: string): string => {
+    const bytes = Buffer.from(sig, "base64url");
+    const alphabet =
+      "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+    for (const c of alphabet) {
+      if (c === sig[sig.length - 1]) continue;
+      const candidate = sig.slice(0, -1) + c;
+      if (Buffer.from(candidate, "base64url").equals(bytes)) return candidate;
+    }
+    throw new Error("no equivalent final base64url char found (unexpected)");
+  };
+
+  it("verifyCompact rejects a signature segment carrying `=` padding (same decoded bytes)", () => {
+    const key = generateSigningKey();
+    const [h, p, s] = signCompact(samplePayload(), key).split(".") as [string, string, string];
+    expectJwsError(() => verifyCompact(`${h}.${p}.${s}=`, buildJwks([key.publicJwk])), "malformed");
+  });
+
+  it("verifyCompact rejects a non-canonical final signature character (same decoded bytes)", () => {
+    const key = generateSigningKey();
+    const jws = signCompact(samplePayload(), key);
+    const [h, p, s] = jws.split(".") as [string, string, string];
+    const malleated = `${h}.${p}.${nonCanonicalFinalChar(s)}`;
+    expect(malleated).not.toBe(jws); // genuinely byte-different…
+    // …yet the signature segment decodes to identical bytes, so this is malleability, not corruption.
+    expect(Buffer.from(malleated.split(".")[2]!, "base64url").equals(Buffer.from(s, "base64url"))).toBe(true);
+    expectJwsError(() => verifyCompact(malleated, buildJwks([key.publicJwk])), "malformed");
+  });
+
+  it("verifyCompact rejects a canonically-encoded but wrong-length (65-byte) signature", () => {
+    const key = generateSigningKey();
+    const [h, p, s] = signCompact(samplePayload(), key).split(".") as [string, string, string];
+    const longSig = b64url(Buffer.concat([Buffer.from(s, "base64url"), Buffer.from([0])]));
+    expectJwsError(() => verifyCompact(`${h}.${p}.${longSig}`, buildJwks([key.publicJwk])), "signature_invalid");
+  });
+
+  it("the offline verifier rejects the SAME malleations — parity with verifyCompact", () => {
+    const key = generateSigningKey();
+    const [h, p, s] = signCompact(samplePayload(), key).split(".") as [string, string, string];
+    const jwks = buildJwks([key.publicJwk]);
+
+    // Non-canonical base64url is caught at the FIRST check (structure), before any key material.
+    for (const malleated of [`${h}.${p}.${s}=`, `${h}.${p}.${nonCanonicalFinalChar(s)}`]) {
+      const result = verifyEvidence({ jws: malleated, jwks });
+      expect(result.ok).toBe(false);
+      expect(result.checks.at(-1)?.id).toBe("structure");
+    }
+    // A 65-byte signature IS canonical base64url, so it passes structure and is
+    // caught at the signature length gate instead — same verdict, different gate.
+    const longSig = b64url(Buffer.concat([Buffer.from(s, "base64url"), Buffer.from([0])]));
+    const longResult = verifyEvidence({ jws: `${h}.${p}.${longSig}`, jwks });
+    expect(longResult.ok).toBe(false);
+    expect(longResult.checks.find((c) => c.id === "signature")?.ok).toBe(false);
+  });
+
+  it("both verifiers reject a whitespace-WRAPPED artifact identically — file framing is not the evidence", () => {
+    const key = generateSigningKey();
+    const jws = signCompact(samplePayload(), key);
+    const jwks = buildJwks([key.publicJwk]);
+    // A trailing newline or surrounding spaces make a byte-different string. The pure
+    // verifier treats its input as EXACT (the CLI trims file framing at the I/O
+    // boundary instead), so neither surface accepts these — and crucially they AGREE,
+    // preserving the invariant that the in-process and offline verifiers never disagree
+    // on a verdict. (Before the fix, verifyEvidence trimmed and verifyCompact did not.)
+    for (const wrapped of [`${jws}\n`, ` ${jws}`, `${jws} `]) {
+      expectJwsError(() => verifyCompact(wrapped, jwks), "malformed");
+      const result = verifyEvidence({ jws: wrapped, jwks });
+      expect(result.ok).toBe(false);
+      expect(result.checks.at(-1)?.id).toBe("structure");
+    }
+  });
+
+  it("the genuine canonical artifact still verifies on both surfaces (positive control)", () => {
+    const key = generateSigningKey();
+    const jws = signCompact(samplePayload(), key);
+    expect(() => verifyCompact(jws, buildJwks([key.publicJwk]))).not.toThrow();
+    // verifyEvidence reaches envelope-shape (samplePayload is not a full envelope),
+    // but every crypto check up to and including the signature passed.
+    const result = verifyEvidence({ jws, jwks: buildJwks([key.publicJwk]) });
+    expect(result.checks.find((c) => c.id === "signature")?.ok).toBe(true);
+  });
+});
+
 describe("did:key encoding", () => {
   it("the standalone verifier reports the SAME issuer did:key fingerprint (independent encoder)", () => {
     const key = generateSigningKey();

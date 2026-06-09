@@ -188,7 +188,59 @@ export function importPrivateJwk(jwk: PrivateJwk): SigningKey {
   };
 }
 
-/** RFC 7517 JWKS document carrying every historical public key. */
+/**
+ * Assert a JWK is a fully-valid Ed25519 public signing key SAFE TO PUBLISH at
+ * JWKS: the OKP/Ed25519/EdDSA/sig literals, `kid` IS the RFC 7638 thumbprint of
+ * `x`, AND `x` actually imports as an Ed25519 public key. The import check is the
+ * one `computeKid` alone cannot give — a thumbprint is self-consistent for ANY
+ * `x` string, so without it a bogus `x` could be published and only fail later at
+ * an independent verifier. Fail closed at the boot boundary instead, in the same
+ * spirit as importPrivateJwk's d↔x cross-check.
+ */
+export function assertPublishableJwk(jwk: PublicJwk): void {
+  if (
+    jwk.kty !== "OKP" ||
+    jwk.crv !== "Ed25519" ||
+    jwk.alg !== "EdDSA" ||
+    jwk.use !== "sig" ||
+    computeKid(jwk.x) !== jwk.kid
+  ) {
+    throw new Error(
+      `published JWK "${jwk.kid}" is not a valid Ed25519 signing key whose ` +
+        `kid is its RFC 7638 thumbprint — refusing to boot`,
+    );
+  }
+  try {
+    createPublicKey({
+      key: { kty: "OKP", crv: "Ed25519", x: jwk.x },
+      format: "jwk",
+    });
+  } catch (cause) {
+    throw new Error(
+      `published JWK "${jwk.kid}" carries an x that is not an importable ` +
+        `Ed25519 public key — refusing to boot`,
+      { cause },
+    );
+  }
+}
+
+/**
+ * RFC 7517 JWKS document carrying every historical public key. Each key is
+ * PROJECTED to exactly the six public members, so the no-private-`d` guarantee
+ * holds at the DATA layer — independent of any response-schema strip downstream.
+ * (jwks.ts ALSO enforces it via the route schema's `additionalProperties:false`;
+ * this is the belt to that route's suspenders, so an internal consumer like
+ * /verify that never passes through the route schema is equally protected.)
+ */
 export function buildJwks(keys: readonly PublicJwk[]): { keys: PublicJwk[] } {
-  return { keys: [...keys] };
+  return {
+    keys: keys.map((k) => ({
+      kty: "OKP",
+      crv: "Ed25519",
+      x: k.x,
+      kid: k.kid,
+      alg: "EdDSA",
+      use: "sig",
+    })),
+  };
 }

@@ -1,5 +1,5 @@
 import Fastify, { type FastifyInstance } from "fastify";
-import { computeKid } from "./crypto/keys.ts";
+import { assertPublishableJwk } from "./crypto/keys.ts";
 import type { PublicJwk, SigningKey } from "./crypto/keys.ts";
 import type { EnvelopeDeps } from "./evidence/envelope.ts";
 import { registerProblemHandling } from "./http/problem.ts";
@@ -49,26 +49,53 @@ export function buildServer(options: ServerOptions): FastifyInstance {
   // passes the full historical set here while `signingKey` stays the live signer.
   const publishedKeys = options.publishedKeys ?? [options.signingKey.publicJwk];
 
+  // Snapshot the published set into FROZEN, fully-projected public JWKs — one read
+  // per field, taken once here at boot. `publishedKeys` is the caller's array and
+  // its members may be live objects; the routes below hold this set for the whole
+  // process lifetime and re-read its fields on every JWKS / verify request. Without
+  // the snapshot, a post-boot mutation of that array — or a hostile getter on a
+  // member — could publish an unimportable key, drop the live signer, or desync
+  // JWKS from /verify AFTER the boot guards already passed. We validate and serve
+  // the SAME frozen bytes. (Same read-once posture as verifyCompact's per-key
+  // snapshot in jws.ts.)
+  const publishedSnapshot: readonly PublicJwk[] = Object.freeze(
+    publishedKeys.map((jwk) =>
+      Object.freeze({
+        kty: jwk.kty,
+        crv: jwk.crv,
+        x: jwk.x,
+        kid: jwk.kid,
+        alg: jwk.alg,
+        use: jwk.use,
+      }),
+    ),
+  );
+
   // Fail closed on a malformed published key — same no-silent-repair posture as
   // the loader and importPrivateJwk (keys.ts). The JWKS endpoint is a STRUCTURAL
   // projector (RFC 7517 shape + no private `d`), not a semantic validator, so the
   // value-integrity invariant it relies on — every kid IS the RFC 7638 thumbprint
-  // of a real Ed25519 signing key — is asserted HERE, at the boot boundary, rather
-  // than served verbatim. A historical key set with a swapped or relabeled entry
-  // must refuse to boot, never publish a key an independent verifier would reject.
-  for (const jwk of publishedKeys) {
-    if (
-      jwk.kty !== "OKP" ||
-      jwk.crv !== "Ed25519" ||
-      jwk.alg !== "EdDSA" ||
-      jwk.use !== "sig" ||
-      computeKid(jwk.x) !== jwk.kid
-    ) {
-      throw new Error(
-        `published JWK "${jwk.kid}" is not a valid Ed25519 signing key whose ` +
-          `kid is its RFC 7638 thumbprint — refusing to boot`,
-      );
-    }
+  // of a real, IMPORTABLE Ed25519 signing key — is asserted HERE, at the boot
+  // boundary, rather than served verbatim. A historical key set with a swapped,
+  // relabeled, or structurally-broken entry must refuse to boot, never publish a
+  // key an independent verifier would reject.
+  for (const jwk of publishedSnapshot) {
+    assertPublishableJwk(jwk);
+  }
+
+  // The live signer's OWN verifying key must be in the published set. A rotation
+  // config that omits it would let /authorize emit 200 signed decisions that this
+  // engine's own JWKS — and POST /verify, which resolves keys from this set — then
+  // REJECT (kid not found), silently breaking the product's core promise that every
+  // decision is independently verifiable. The default set is exactly
+  // [signingKey.publicJwk]; only a deployment passing `publishedKeys` can violate
+  // this, so guard it at boot rather than discover it per failed verification.
+  if (!publishedSnapshot.some((jwk) => jwk.kid === options.signingKey.kid)) {
+    throw new Error(
+      `the live signing key (kid ${options.signingKey.kid}) is not among ` +
+        `publishedKeys — its decisions would fail this engine's own JWKS and ` +
+        `/verify; refusing to boot`,
+    );
   }
 
   // A profile collision is a boot failure, never a silent last-wins overwrite —
@@ -107,9 +134,9 @@ export function buildServer(options: ServerOptions): FastifyInstance {
 
   // W2 routes — pre-wired here so the fan-out implementers inherit a stable
   // seam; each plugin receives ONLY what it needs.
-  void app.register(jwksRoute, { publishedKeys });
+  void app.register(jwksRoute, { publishedKeys: publishedSnapshot });
   void app.register(rulePacksRoute, { packsByIdVersion });
-  void app.register(verifyRoute, { publishedKeys, packsByIdVersion });
+  void app.register(verifyRoute, { publishedKeys: publishedSnapshot, packsByIdVersion });
 
   return app;
 }

@@ -13,6 +13,7 @@
 import Fastify from "fastify";
 import { afterAll, describe, expect, it } from "vitest";
 import {
+  buildJwks,
   computeKid,
   exportPrivateJwk,
   generateSigningKey,
@@ -105,5 +106,26 @@ describe("the private `d` field is stripped at the serialization boundary (runti
     } finally {
       await leakApp.close();
     }
+  });
+
+  // Defense-in-depth below the route: buildJwks itself PROJECTS each key to the
+  // six public members, so the no-`d` guarantee holds at the DATA layer too — an
+  // internal consumer like /verify that never passes through the route's response
+  // schema is equally protected. (Remove the projection and this test FAILS even
+  // though the route test above still passes.)
+  it("buildJwks drops `d` from a PrivateJwk before any serialization step", () => {
+    const leaky = exportPrivateJwk(k1); // PrivateJwk → carries `d`
+    expect(leaky).toHaveProperty("d");
+
+    const jwks = buildJwks([leaky]);
+    expect(jwks.keys[0]).not.toHaveProperty("d");
+    expect(jwks.keys[0]).toEqual({
+      kty: "OKP",
+      crv: "Ed25519",
+      x: k1.publicJwk.x,
+      kid: k1.kid,
+      alg: "EdDSA",
+      use: "sig",
+    });
   });
 });

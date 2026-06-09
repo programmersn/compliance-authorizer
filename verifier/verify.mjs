@@ -80,6 +80,18 @@ const sha256Hex = (/** @type {string|Buffer} */ data) =>
 
 const b64urlDecode = (/** @type {string} */ text) => Buffer.from(text, "base64url");
 
+// RFC 7515 base64url segments are canonical and UNPADDED. Node's base64url
+// decoder is lenient: it ignores `=` padding and the low "don't-care" bits of a
+// segment's final character, so MANY distinct strings decode to the same bytes.
+// For the signature segment — the one segment the signature itself cannot cover —
+// that is malleability: from ANY valid artifact an attacker can mint byte-different
+// ones that all still verify. Reject every non-canonical encoding by requiring each
+// segment to round-trip exactly: decode, then re-encode, must reproduce the input.
+// (The payload is independently pinned by the canonical-form check and the header
+// by the signature; this brings the signature segment up to the same standard.)
+const isCanonicalB64url = (/** @type {string} */ text) =>
+  Buffer.from(text, "base64url").toString("base64url") === text;
+
 // did:key encoding of the VERIFYING key (multicodec ed25519-pub 0xed01,
 // multibase base58btc) — printed so the operator can compare the fingerprint
 // against the issuer's out-of-band published did:key. A signature verifier can
@@ -134,12 +146,24 @@ export function verifyEvidence({ jws, jwks, pack }) {
   };
   const pass = (id, title, detail) => checks.push({ id, title, ok: true, detail });
 
-  // 1. Structure
-  const parts = typeof jws === "string" ? jws.trim().split(".") : [];
+  // 1. Structure. The artifact is the EXACT compact JWS. Surrounding whitespace is
+  // file framing, NOT part of the evidence, and is not stripped here — so `artifact`
+  // and `artifact + "\n"` are never treated as the same JWS. This keeps the verifier
+  // in lockstep with verifyCompact (src/crypto/jws.ts), which also never trims; the
+  // CLI tolerates a file's trailing newline by trimming at the I/O boundary instead.
+  const parts = typeof jws === "string" ? jws.split(".") : [];
   if (parts.length !== 3 || parts.some((part) => part.length === 0)) {
     return fail("structure", "JWS-compact structure", "expected 3 non-empty dot-separated segments");
   }
   const [headerB64, payloadB64, signatureB64] = parts;
+  // Reject non-canonical base64url BEFORE any key material is touched: padding, a
+  // non-canonical final character, or stray characters (surrounding whitespace lands
+  // INSIDE a segment) are all rejected here, so an artifact cannot be malleated into
+  // a byte-different string that still verifies.
+  if (!parts.every(isCanonicalB64url)) {
+    return fail("structure", "JWS-compact structure",
+      "a segment is not canonical unpadded base64url (RFC 7515) — non-canonical encodings are rejected as malleable");
+  }
   let header;
   try {
     header = JSON.parse(b64urlDecode(headerB64).toString("utf8"));
@@ -193,11 +217,16 @@ export function verifyEvidence({ jws, jwks, pack }) {
   } catch {
     return fail("signature", "Ed25519 signature", "public key could not be imported");
   }
+  const signatureBytes = b64urlDecode(signatureB64);
+  if (signatureBytes.length !== 64) {
+    return fail("signature", "Ed25519 signature",
+      "signature segment does not decode to exactly 64 bytes (Ed25519)");
+  }
   const signatureValid = ed25519Verify(
     null,
     Buffer.from(`${headerB64}.${payloadB64}`, "utf8"),
     publicKey,
-    b64urlDecode(signatureB64),
+    signatureBytes,
   );
   if (!signatureValid) {
     return fail("signature", "Ed25519 signature", "signature does NOT verify — the evidence has been tampered with or was not issued by this key");
@@ -298,7 +327,9 @@ function main() {
   // file means nothing was verified, and the exit code must not say otherwise.
   let jws, jwks, pack;
   try {
-    jws = readFileSync(values.evidence, "utf8");
+    // Trim file framing (e.g. a trailing newline) at the I/O boundary — it is not
+    // part of the evidence artifact. The verifier itself treats its input as exact.
+    jws = readFileSync(values.evidence, "utf8").trim();
     jwks = JSON.parse(readFileSync(values.jwks, "utf8"));
     pack = values.pack ? JSON.parse(readFileSync(values.pack, "utf8")) : undefined;
   } catch (error) {

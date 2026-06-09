@@ -98,6 +98,13 @@ const flippedDecisionArtifact = `${genuineHeader}.${tamperedPayload}.${genuineSi
 // algorithm. Rejected at the alg-pinning check, BEFORE any key is touched.
 const algNoneArtifact = `${b64url({ alg: "none", kid: signingKey.kid })}.${genuinePayload}.${genuineSignature}`;
 
+// (e) signature-segment malleability: append base64url `=` padding to the
+// signature. It decodes to the SAME 64 bytes, so this is a byte-different TWIN
+// of the genuine artifact, not a corruption. The verifier must reject it as
+// non-canonical — never accept a re-encoded twin of valid evidence as valid
+// (otherwise one decision has many valid artifact strings: a dedup/replay-key hole).
+const paddedSigArtifact = `${genuineHeader}.${genuinePayload}.${genuineSignature}=`;
+
 function buildApp() {
   const app = Fastify({
     ajv: {
@@ -189,6 +196,37 @@ describe("a well-formed request is ALWAYS 200 — valid:false is a verdict, not 
     // Rejected at the alg-pinning check — only "EdDSA" is accepted.
     const checks = body["checks"] as { id: string; ok: boolean }[];
     expect(checks.find((c) => c.id === "alg-pinned")?.ok).toBe(false);
+  });
+
+  it("(e) a valid:false verdict carries issuer:null — never a claimed-not-verified identity", async () => {
+    // The corrupted-signature artifact has a kid that DOES resolve in the JWKS
+    // (key-resolution passes), but the signature does not verify. verify.mjs sets
+    // `issuer` at the key-resolution check, BEFORE the signature check — so the
+    // route must NOT surface that issuer as if it signed these bytes.
+    const response = await verify(corruptedSigArtifact);
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json<Record<string, unknown>>();
+    expect(body["valid"]).toBe(false);
+    // key-resolution itself passed (the kid is published) — proving the issuer
+    // WAS recoverable and is being suppressed on purpose, not absent by accident.
+    const checks = body["checks"] as { id: string; ok: boolean }[];
+    expect(checks.find((c) => c.id === "key-resolution")?.ok).toBe(true);
+    expect(body["issuer"]).toBeNull();
+  });
+
+  it("(f) malleated signature segment (base64url padding) → 200 valid:false at the structure check", async () => {
+    // The byte-different twin still arrives as a well-formed request, so it is a
+    // 200 verdict (not a 4xx) — but the verdict is valid:false: a re-encoded twin
+    // of valid evidence is NOT itself valid evidence.
+    const response = await verify(paddedSigArtifact);
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json<Record<string, unknown>>();
+    expect(body["valid"]).toBe(false);
+    // Rejected as non-canonical base64url at the structure check, before any key.
+    const checks = body["checks"] as { id: string; ok: boolean }[];
+    expect(checks.find((c) => c.id === "structure")?.ok).toBe(false);
   });
 });
 

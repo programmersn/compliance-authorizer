@@ -14,9 +14,13 @@
  * (verifier/verify.mjs) BEFORE the fan-out depends on it. The forbidden
  * direction is verify.mjs → src/; this src/ → verify.mjs direction is allowed.
  *
- * ZERO-DIVERGENCE: this route REUSES verifyEvidence from verifier/verify.mjs —
- * the exact same code path the standalone CLI runs. The server surface and the
- * offline path can never disagree on a verdict because they are one function.
+ * SHARED VERIFIER: this route REUSES verifyEvidence from verifier/verify.mjs —
+ * the exact same code path the standalone CLI runs — so the signature, canonical
+ * form and hash verdicts can never diverge from the offline path. The ONE
+ * deliberate exception is the D12 evaluator_version seam: `verify.mjs --pack`
+ * folds it into authenticity (a mismatch → FAIL), whereas this route reclassifies
+ * it as REPRODUCIBILITY (authentic bytes, reproduced:null) per the d12Only note
+ * below. That divergence is intentional and surfaced, never silent.
  */
 import { Type } from "@sinclair/typebox";
 import type { FastifyPluginAsync } from "fastify";
@@ -145,7 +149,12 @@ export const verifyRoute: FastifyPluginAsync<VerifyRouteOptions> = (
         //   STILL HTTP 200 — a verdict, never a 4xx.
         valid: authentic.ok,
         checks: authentic.checks,
-        issuer: authentic.issuer,
+        // `issuer` is recovered at the key-resolution check, which runs BEFORE
+        // the signature check — so on an INAUTHENTIC artifact it would name a key
+        // that did not actually sign these bytes (a claimed-not-verified identity).
+        // Surface it only alongside an authentic verdict; the offline CLI hides it
+        // identically (it prints the issuer block only inside `result.ok`).
+        issuer: authentic.ok ? authentic.issuer : null,
         decision: envelope ? envelope["decision"] : null,
         rule_pack_id: envelope ? envelope["rule_pack_id"] : null,
         rule_pack_version: envelope ? envelope["rule_pack_version"] : null,
