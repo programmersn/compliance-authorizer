@@ -74,8 +74,28 @@ function assertConditionValue(condition: Condition, where: string): void {
   }
 }
 
+export interface LoadRulePackOptions {
+  /**
+   * Assert the pack's `required_evaluator_version` equals this engine's
+   * `EVALUATOR_VERSION` (the D12 exact-match contract). Default `true`: the
+   * SERVER must only load packs it can actually run, so it fails closed here.
+   *
+   * The offline replay CLI sets this `false`. It validates and hashes a
+   * foreign-evaluator pack so `replayEnvelope` can classify it as a D12
+   * "could not be attempted" verdict (`reproduced:null`, exit 1) instead of the
+   * loader pre-empting it as an operator/input error (exit 2). The hash binding
+   * is computed either way, so a wrong or tampered pack is still rejected
+   * downstream — only the version assertion is relaxed, never the content check.
+   */
+  enforceEvaluatorVersion?: boolean;
+}
+
 /** Parse and fully validate a rule pack from its JSON text. */
-export function loadRulePack(jsonText: string): LoadedRulePack {
+export function loadRulePack(
+  jsonText: string,
+  options: LoadRulePackOptions = {},
+): LoadedRulePack {
+  const { enforceEvaluatorVersion = true } = options;
   let parsed: unknown;
   try {
     parsed = JSON.parse(jsonText);
@@ -92,8 +112,10 @@ export function loadRulePack(jsonText: string): LoadedRulePack {
   const pack: RulePack = parsed;
 
   // D12: the scholar signs rule_pack_hash; the pack pins the evaluator semantics
-  // it was authored against. Exact match at v0.x — no ranges, no drift.
-  if (pack.required_evaluator_version !== EVALUATOR_VERSION) {
+  // it was authored against. Exact match at v0.x — no ranges, no drift. The replay
+  // CLI opts out (enforceEvaluatorVersion:false) so a foreign-evaluator pack is
+  // classified by replayEnvelope (reproduced:null) rather than rejected at load.
+  if (enforceEvaluatorVersion && pack.required_evaluator_version !== EVALUATOR_VERSION) {
     throw new RulePackError(
       `rule pack requires evaluator ${pack.required_evaluator_version}, ` +
         `but this engine is ${EVALUATOR_VERSION} (D12 exact-match contract)`,

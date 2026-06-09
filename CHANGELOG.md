@@ -40,6 +40,15 @@ Versions follow a 4-digit MAJOR.MINOR.PATCH.MICRO scheme; dates are YYYY-MM-DD.
 - `POST /verify` reports `issuer: null` on an inauthentic artifact, never surfacing a
   claimed-but-unverified identity (mirrors the offline CLI).
 
+### Fixed
+
+- Offline decision replay (`scripts/replay.ts`) now classifies an artifact whose cited pack pins a
+  different `evaluator_version` as a reproducibility verdict (`reproduced:null`, "replay could not be
+  attempted", exit 1) instead of an operator/input error (exit 2). The loader's D12 evaluator-version
+  assertion is now opt-out, so the replay tool validates and hashes a foreign-evaluator pack and lets
+  `replayEnvelope` classify it; the `rule_pack_hash` content guard is unchanged, so a wrong or
+  tampered pack is still rejected.
+
 ### Notes
 
 - The UNCERTIFIED marker remains unavoidable on every served surface: synthetic demo rule pack

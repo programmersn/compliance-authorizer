@@ -76,7 +76,15 @@ function main(): void {
       inputError("evidence payload is not a JSON object envelope");
     }
     envelope = decoded as Record<string, unknown>;
-    pack = loadRulePack(readFileSync(values.pack, "utf8"));
+    // Load WITHOUT enforcing the current evaluator version. A foreign-evaluator
+    // pack (a genuine historical or future artifact) must be validated and hashed,
+    // then handed to replayEnvelope, which classifies it as a D12 "could not be
+    // attempted" verdict (reproduced:null, exit 1) — NOT rejected here as an
+    // operator/input error (exit 2). The rule_pack_hash guard below still binds the
+    // pack bytes to the envelope, so a wrong or tampered pack is still rejected.
+    pack = loadRulePack(readFileSync(values.pack, "utf8"), {
+      enforceEvaluatorVersion: false,
+    });
   } catch (error) {
     inputError(error instanceof Error ? error.message : String(error));
   }
