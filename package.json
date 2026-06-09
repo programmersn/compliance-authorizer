@@ -1,6 +1,6 @@
 {
   "name": "compliance-authorizer",
-  "version": "0.1.0.0",
+  "version": "0.2.0.0",
   "description": "Runtime compliance authorization for agentic payments — signed allow/deny/review decisions with verifiable evidence envelopes. Ships an uncertified synthetic demo rule pack (Shariah profile v0.1): not a fatwa / not certified / not production advice.",
   "type": "module",
   "license": "MIT",

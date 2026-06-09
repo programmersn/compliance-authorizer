@@ -19,10 +19,18 @@ the `T-D*` task IDs trace to the private planning records.
       W2-scope (documented in the commit + the review log). **Priority:** P1
 
 ## W2 — backend completion
-- [ ] always-200 decision contract (deny = 200, read the body) + RFC 9457 4xx for integration failures
-- [ ] `GET /.well-known/jwks.json` (all historical keys) · `GET /rule-packs/:id/:version` · `POST /verify`
-- [ ] Reproducible-decision replay (rule_pack_hash + evaluator_version + intent_hash)
-- [ ] `REPRODUCIBILITY.md` + self-contained `examples/`
+All W2 deliverables shipped in **v0.2.0.0 (2026-06-09)** — see Completed.
+
+### Deferred hardening (from the v0.2.0.0 cross-vendor review)
+- [ ] Verifier-side strict envelope schema in `verifier/verify.mjs` — reject unknown fields and
+      enforce types/formats (`envelope_version`, `reason_codes`/`matched_rules` array shapes,
+      `rule_pack_hash` + timestamp formats), not just required-field presence. A signed-but-malformed
+      envelope is only producible by the key holder, so this is robustness, not an outsider-reachable
+      hole. **Priority:** P2
+- [ ] `scripts/replay.ts` exit-code semantics — replay decodes the payload and re-evaluates WITHOUT
+      checking authenticity (by design, and loudly labelled). Consider a distinct non-zero status
+      (or requiring `--jwks` + a verify pass) so automation consuming only the exit code cannot
+      confuse "payload re-derived" with "valid evidence re-derived." **Priority:** P3
 
 ## W3-4 — web surfaces (build to DESIGN.md + design/ mockups)
 - [ ] T-D1 evidence viewer (match `design/evidence-viewer-chosen.html`)
@@ -40,6 +48,17 @@ amber (never red) · generic public labels only (no named institutions) · hones
 forward-projection copy stays future-conditional.
 
 ## Completed
+- [x] always-200 verification contract + `GET /.well-known/jwks.json` (all historical keys) +
+      `GET /rule-packs/:id/:version` + `POST /verify` (server surface reuses the offline verifier;
+      `valid:false` is a 200 verdict, malformed is 400 problem+json)
+      **Completed:** v0.2.0.0 (2026-06-09)
+- [x] Reproducible-decision replay (rule_pack_hash + evaluator_version + intent_hash) +
+      `REPRODUCIBILITY.md` + self-contained `examples/`
+      **Completed:** v0.2.0.0 (2026-06-09)
+- [x] JWS signature-segment malleability closed + JWKS publish-boundary / boot-guard hardening
+      (both verifiers reject non-canonical base64url + non-64-byte signatures; importable-key,
+      live-signer-in-set, and frozen published-set boot guards; `issuer:null` on inauthentic)
+      **Completed:** v0.2.0.0 (2026-06-09)
 - [x] `POST /authorize` → Ed25519 JWS-compact signed evidence envelope
       **Completed:** v0.1.0.0 (2026-06-05)
 - [x] Standalone offline verifier (zero server trust)
