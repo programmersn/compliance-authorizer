@@ -14,7 +14,12 @@ export interface VerificationResult {
   ok: boolean;
   checks: VerificationCheck[];
   envelope: Record<string, unknown> | null;
-  /** kid + did:key of the key that verified — compare against the issuer's published fingerprint. */
+  /**
+   * kid + did:key of the verifying key. Populated ONLY after the Ed25519
+   * signature verifies (null on any structural / alg / key-resolution / signature
+   * failure), so it never names a key that did not actually sign these bytes.
+   * Compare against the issuer's published fingerprint (obtained out-of-band).
+   */
   issuer: { kid: string; did: string } | null;
 }
 

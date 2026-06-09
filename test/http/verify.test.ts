@@ -200,9 +200,10 @@ describe("a well-formed request is ALWAYS 200 — valid:false is a verdict, not 
 
   it("(e) a valid:false verdict carries issuer:null — never a claimed-not-verified identity", async () => {
     // The corrupted-signature artifact has a kid that DOES resolve in the JWKS
-    // (key-resolution passes), but the signature does not verify. verify.mjs sets
-    // `issuer` at the key-resolution check, BEFORE the signature check — so the
-    // route must NOT surface that issuer as if it signed these bytes.
+    // (key-resolution passes), but the signature does not verify. verify.mjs now
+    // populates `issuer` only AFTER the signature verifies, so a bad signature
+    // already yields issuer:null; the route also suppresses it on any non-authentic
+    // verdict (defense in depth). Either way, no key is named that did not sign.
     const response = await verify(corruptedSigArtifact);
 
     expect(response.statusCode).toBe(200);
@@ -238,6 +239,12 @@ describe("a MALFORMED request is 400 problem+json with NO verdict (error ≠ den
     expect(response.headers["content-type"]).toContain(PROBLEM_CONTENT_TYPE);
     const body = response.json<Record<string, unknown>>();
     expect(body["status"]).toBe(400);
+    // The validation problem is request-body-agnostic: /verify's body is an
+    // evidence_artifact wrapper, NOT a payment intent, so the shared global AJV
+    // renderer must not leak /authorize's intent-specific wording here.
+    expect(body["title"]).toBe("Request body failed schema validation");
+    expect(String(body["type"])).toContain("invalid-request-body");
+    expect(JSON.stringify(body)).not.toContain("payment intent");
     // A failure carries NO verdict fields.
     expect(body).not.toHaveProperty("valid");
     expect(body).not.toHaveProperty("decision");

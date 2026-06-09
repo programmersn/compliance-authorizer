@@ -149,11 +149,12 @@ export const verifyRoute: FastifyPluginAsync<VerifyRouteOptions> = (
         //   STILL HTTP 200 — a verdict, never a 4xx.
         valid: authentic.ok,
         checks: authentic.checks,
-        // `issuer` is recovered at the key-resolution check, which runs BEFORE
-        // the signature check — so on an INAUTHENTIC artifact it would name a key
-        // that did not actually sign these bytes (a claimed-not-verified identity).
-        // Surface it only alongside an authentic verdict; the offline CLI hides it
-        // identically (it prints the issuer block only inside `result.ok`).
+        // `issuer` is populated by verifyEvidence only AFTER the signature
+        // verifies, so a bad signature already yields a null issuer. It can still
+        // be set when a LATER check fails (authentic bytes, non-envelope content),
+        // so surface it only alongside a fully-authentic verdict — a partial
+        // failure must never name an issuer. The offline CLI hides it identically
+        // (it prints the issuer block only inside `result.ok`).
         issuer: authentic.ok ? authentic.issuer : null,
         decision: envelope ? envelope["decision"] : null,
         rule_pack_id: envelope ? envelope["rule_pack_id"] : null,

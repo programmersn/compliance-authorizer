@@ -77,11 +77,11 @@ function validationProblem(error: FastifyError): ProblemDocument {
       : {}),
   }));
   return {
-    type: `${PROBLEM_TYPE_BASE}/invalid-intent`,
-    title: "Payment intent failed schema validation",
+    type: `${PROBLEM_TYPE_BASE}/invalid-request-body`,
+    title: "Request body failed schema validation",
     status: 400,
     detail:
-      "The request body is not a valid payment intent. No decision was made and no evidence envelope exists for this request.",
+      "The request body failed schema validation. No decision was made and no evidence envelope exists for this request.",
     issues,
   };
 }

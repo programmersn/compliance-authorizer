@@ -277,6 +277,21 @@ describe("boot guards", () => {
     ).toThrow(/duplicate rule-pack profile/);
   });
 
+  it("refuses duplicate rule-pack id/version even across distinct profiles", () => {
+    // The duplicate-profile guard runs FIRST and trips on identical packs, so use a
+    // DIFFERENT profile carrying the SAME id+version: the profile guard passes and
+    // execution reaches the SEPARATE id/version guard (a distinct boot failure with
+    // its own message). Two distinct profiles legitimately sharing an id/version is
+    // exactly the case the id/version index in server.ts guards against.
+    const second = {
+      ...loadedPack,
+      pack: { ...loadedPack.pack, profile: "shariah-v0.1-alt" },
+    };
+    expect(() =>
+      buildServer({ loadedPacks: [loadedPack, second], signingKey }),
+    ).toThrow(/duplicate rule-pack id\/version/);
+  });
+
   it("refuses a published JWK whose kid is not its RFC 7638 thumbprint (fail closed, never serve swapped key material)", () => {
     const tamperedKey = { ...signingKey.publicJwk, kid: "not-a-thumbprint" };
     expect(() =>

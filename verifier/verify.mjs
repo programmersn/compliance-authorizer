@@ -193,10 +193,22 @@ export function verifyEvidence({ jws, jwks, pack }) {
 
   // 3. Key resolution + kid integrity (kid must BE the RFC 7638 thumbprint).
   const keys = Array.isArray(jwks?.keys) ? jwks.keys : [];
-  const jwk = keys.find((key) => key && typeof key === "object" && key.kid === header.kid);
-  if (!jwk) {
+  const found = keys.find((key) => key && typeof key === "object" && key.kid === header.kid);
+  if (!found) {
     return fail("key-resolution", "Issuer key resolution", `kid ${header.kid} not found in the provided JWKS`);
   }
+  // Snapshot the matched key with a SINGLE read per field. verifyEvidence is
+  // EXPORTED and accepts arbitrary objects, so reading `found.x` once for the
+  // thumbprint and again to build the verifying key would let a hostile getter/
+  // Proxy present an honest x to the kid==thumbprint check and an attacker x to
+  // the signature (a property-read TOCTOU → key substitution under a trusted
+  // kid). Use ONLY this snapshot below — never the caller's object. The kid is
+  // bound to the PROTECTED-HEADER kid (already matched at find), NOT a second read
+  // of found.kid: a hostile kid getter could otherwise return the header kid at
+  // find and an attacker kid here, and the thumbprint check would bind x to the
+  // attacker kid — verifying under a key whose kid disagrees with the artifact's.
+  // Mirrors verifyCompact's per-key snapshot in src/crypto/jws.ts.
+  const jwk = { kty: found.kty, crv: found.crv, x: found.x, kid: header.kid };
   if (jwk.kty !== "OKP" || jwk.crv !== "Ed25519" || typeof jwk.x !== "string") {
     return fail("key-resolution", "Issuer key resolution", "JWKS key is not an Ed25519 OKP key");
   }
@@ -207,7 +219,6 @@ export function verifyEvidence({ jws, jwks, pack }) {
     return fail("key-resolution", "Issuer key resolution",
       "JWKS kid does not match the key's RFC 7638 thumbprint — key material may have been swapped");
   }
-  issuer = { kid: jwk.kid, did: didKeyFromJwkX(jwk.x) };
   pass("key-resolution", "Issuer key resolution", `kid resolves to an Ed25519 key; RFC 7638 thumbprint matches`);
 
   // 4. Signature
@@ -231,6 +242,13 @@ export function verifyEvidence({ jws, jwks, pack }) {
   if (!signatureValid) {
     return fail("signature", "Ed25519 signature", "signature does NOT verify — the evidence has been tampered with or was not issued by this key");
   }
+  // Populate `issuer` ONLY now that the signature has verified — never at key
+  // resolution above. `issuer` names the key that ACTUALLY signed these bytes, so
+  // a signature failure must leave it null (the exported API never surfaces a
+  // claimed-but-unverified identity). A LATER non-signature check may still fail
+  // (e.g. a non-envelope payload); the signer is genuine there, so issuer stays
+  // set — that is the independent-encoder fingerprint the tests assert.
+  issuer = { kid: jwk.kid, did: didKeyFromJwkX(jwk.x) };
   pass("signature", "Ed25519 signature", "signature verifies over the protected header + payload");
 
   // 5. Canonical form — the payload must BE its own RFC 8785 form.

@@ -142,18 +142,29 @@ export function verifyCompact(
     throw new JwsError("malformed", "protected header must carry a non-empty kid");
   }
 
-  const found = jwks.keys.find((key) => key.kid === kid);
+  // Tolerate a malformed (null/undefined) JWKS entry instead of throwing a raw
+  // TypeError on `.kid` access: verifyCompact promises a JwsError on ANY defect and
+  // accepts arbitrary caller objects (mirrors verifier/verify.mjs's guarded find).
+  // A non-conforming entry is skipped; an unmatched kid then yields kid_unknown.
+  const found = (jwks.keys as readonly (PublicJwk | null | undefined)[]).find(
+    (key) => key != null && key.kid === kid,
+  );
   if (!found) throw new JwsError("kid_unknown", `kid ${kid} not present in JWKS`);
   // Snapshot the matched key with a SINGLE read per field. verifyCompact is exported
   // and accepts arbitrary objects, so reading jwk.x once for the thumbprint check and
   // again when building the verifying key would let a hostile getter/Proxy present
   // honest.x to the check and attacker.x to the key (a property-read TOCTOU). Only
-  // this snapshot — never the caller's object — is used below.
+  // this snapshot — never the caller's object — is used below. The kid is bound to
+  // the PROTECTED-HEADER kid (already matched at find), NOT a second read of
+  // found.kid: a hostile kid getter could otherwise return the header kid at find and
+  // an attacker kid here, and the thumbprint check below would then bind x to the
+  // attacker kid — verifying under a key whose kid disagrees with the one the
+  // artifact claims. Using the header kid forces computeKid(x) to equal that claim.
   const jwk: PublicJwk = {
     kty: found.kty,
     crv: found.crv,
     x: found.x,
-    kid: found.kid,
+    kid,
     alg: found.alg,
     use: found.use,
   };

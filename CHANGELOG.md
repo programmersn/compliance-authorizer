@@ -48,6 +48,26 @@ Versions follow a 4-digit MAJOR.MINOR.PATCH.MICRO scheme; dates are YYYY-MM-DD.
   assertion is now opt-out, so the replay tool validates and hashes a foreign-evaluator pack and lets
   `replayEnvelope` classify it; the `rule_pack_hash` content guard is unchanged, so a wrong or
   tampered pack is still rejected.
+- Both verifiers (`verifier/verify.mjs` and `src/crypto/jws.ts`) now snapshot the matched JWKS key with
+  a single read per field AND bind the snapshot `kid` to the protected-header `kid` (already matched at
+  lookup), rather than re-reading the entry's `x`/`kid`. The verifiers read the key's `x` and `kid` more
+  than once (lookup, thumbprint, did:key, signature), so a hostile in-process getter/Proxy could have
+  presented honest values at the `kid`==thumbprint check and attacker values at signature verification
+  — a property-read TOCTOU that let an artifact verify under a key whose `kid` disagreed with the one it
+  claims. Not reachable through the route or CLI (both pass plain JSON), but the verifiers are
+  independently importable, so both are brought to parity. Regression-tested (x-flip and kid-flip) on
+  both.
+- `src/crypto/jws.ts` `verifyCompact` now tolerates a malformed (null / non-object) JWKS entry the same
+  way the offline verifier does — skipping it and returning a `kid_unknown` `JwsError` rather than a raw
+  `TypeError` — honoring its "JwsError on any defect" contract and keeping the two verifiers in lockstep.
+- `verifier/verify.mjs` now populates the returned `issuer` only AFTER the Ed25519 signature verifies,
+  so the exported `verifyEvidence` never returns a non-null `issuer` alongside an invalid signature (it
+  stays set when a later, non-signature check fails — the signer is genuine there). The `POST /verify`
+  route already suppressed this; the fix closes it at the exported API and corrects the `verify.d.mts`
+  type doc.
+- The shared AJV validation problem renderer (`src/http/problem.ts`) is now request-body-agnostic
+  ("Request body failed schema validation"), so a malformed `POST /verify` body no longer returns the
+  `/authorize`-specific "not a valid payment intent" message. The per-field `issues` array is unchanged.
 
 ### Notes
 
