@@ -107,6 +107,20 @@ function main(): void {
     );
   }
 
+  // id/version do NOT pin pack CONTENT — rule_pack_hash exists precisely because
+  // two packs can share an id/version yet differ byte-for-byte. A content-modified
+  // pack (same id/version, different hash) would otherwise replay against a pack
+  // the envelope never cited and emit a REPRODUCED / NOT-REPRODUCED verdict instead
+  // of the operator-error signal. Pin content here too (mirrors the /verify route's
+  // `cited.hash === rule_pack_hash` guard, src/routes/verify.ts) so the wrong pack
+  // is always exit 2, never a reproducibility verdict against the wrong bytes.
+  if (pack.hash !== String(envelope["rule_pack_hash"])) {
+    inputError(
+      `the --pack provided hashes to ${pack.hash}, but the envelope cites ` +
+        `rule_pack_hash ${String(envelope["rule_pack_hash"])} — supply the exact cited pack`,
+    );
+  }
+
   const r = replayEnvelope(envelope, pack.pack);
   const citedDecision = String(envelope["decision"]);
 

@@ -276,4 +276,29 @@ describe("boot guards", () => {
       buildServer({ loadedPacks: [loadedPack, loadedPack], signingKey }),
     ).toThrow(/duplicate rule-pack profile/);
   });
+
+  it("refuses a published JWK whose kid is not its RFC 7638 thumbprint (fail closed, never serve swapped key material)", () => {
+    const tamperedKey = { ...signingKey.publicJwk, kid: "not-a-thumbprint" };
+    expect(() =>
+      buildServer({
+        loadedPacks: [loadedPack],
+        signingKey,
+        publishedKeys: [tamperedKey],
+      }),
+    ).toThrow(/not a valid Ed25519 signing key whose kid is its RFC 7638 thumbprint/);
+  });
+
+  it("refuses a published JWK that is not an Ed25519 OKP signing key (fail closed)", () => {
+    // x/kid are internally consistent, but kty/crv/alg/use are wrong — the JWKS
+    // endpoint would otherwise coerce them to the schema literals and publish a
+    // non-Ed25519 key as if it were one. Boot must reject it.
+    const wrongType = { ...signingKey.publicJwk, crv: "X25519" as "Ed25519" };
+    expect(() =>
+      buildServer({
+        loadedPacks: [loadedPack],
+        signingKey,
+        publishedKeys: [wrongType],
+      }),
+    ).toThrow(/not a valid Ed25519 signing key/);
+  });
 });

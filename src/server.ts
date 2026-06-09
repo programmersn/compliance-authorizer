@@ -1,4 +1,5 @@
 import Fastify, { type FastifyInstance } from "fastify";
+import { computeKid } from "./crypto/keys.ts";
 import type { PublicJwk, SigningKey } from "./crypto/keys.ts";
 import type { EnvelopeDeps } from "./evidence/envelope.ts";
 import { registerProblemHandling } from "./http/problem.ts";
@@ -47,6 +48,28 @@ export function buildServer(options: ServerOptions): FastifyInstance {
   // key, so every existing caller keeps working unchanged. A rotating deployment
   // passes the full historical set here while `signingKey` stays the live signer.
   const publishedKeys = options.publishedKeys ?? [options.signingKey.publicJwk];
+
+  // Fail closed on a malformed published key — same no-silent-repair posture as
+  // the loader and importPrivateJwk (keys.ts). The JWKS endpoint is a STRUCTURAL
+  // projector (RFC 7517 shape + no private `d`), not a semantic validator, so the
+  // value-integrity invariant it relies on — every kid IS the RFC 7638 thumbprint
+  // of a real Ed25519 signing key — is asserted HERE, at the boot boundary, rather
+  // than served verbatim. A historical key set with a swapped or relabeled entry
+  // must refuse to boot, never publish a key an independent verifier would reject.
+  for (const jwk of publishedKeys) {
+    if (
+      jwk.kty !== "OKP" ||
+      jwk.crv !== "Ed25519" ||
+      jwk.alg !== "EdDSA" ||
+      jwk.use !== "sig" ||
+      computeKid(jwk.x) !== jwk.kid
+    ) {
+      throw new Error(
+        `published JWK "${jwk.kid}" is not a valid Ed25519 signing key whose ` +
+          `kid is its RFC 7638 thumbprint — refusing to boot`,
+      );
+    }
+  }
 
   // A profile collision is a boot failure, never a silent last-wins overwrite —
   // same principle as the loader: a misconfigured pack set must refuse to serve.

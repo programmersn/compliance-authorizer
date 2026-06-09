@@ -132,9 +132,16 @@ export const verifyRoute: FastifyPluginAsync<VerifyRouteOptions> = (
       return {
         // valid:true  == cryptographically authentic evidence.
         // valid:false == well-formed request, INAUTHENTIC artifact (bad
-        //   signature, tampered payload, alg != EdDSA, kid != thumbprint, or a
-        //   rule_pack_hash / id-version mismatch). A D12 evaluator_version
-        //   mismatch is NOT inauthentic — it is reported under reproducibility.
+        //   signature, tampered payload, alg != EdDSA, kid != thumbprint, or —
+        //   ONLY WHEN the cited pack resolves on this engine (rule_pack_resolved
+        //   :true) — a rule_pack_hash / id-version mismatch). A D12
+        //   evaluator_version mismatch is NOT inauthentic — it is reported under
+        //   reproducibility. For a cited pack this engine does NOT serve, the
+        //   verdict is authentic-bytes-only (signature + canonical form +
+        //   intent_hash) with rule_pack_resolved:false as the honest caveat — the
+        //   offline verifier behaves identically when run without --pack, and a
+        //   forged unserved id can only DOWNGRADE the replay signal to
+        //   reproduced:null, never forge a valid:true on served-pack tampering.
         //   STILL HTTP 200 — a verdict, never a 4xx.
         valid: authentic.ok,
         checks: authentic.checks,
