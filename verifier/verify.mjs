@@ -35,6 +35,29 @@ import { parseArgs } from "node:util";
 // side (src/crypto/canonicalize.ts) so the two implementations keep agreeing.
 const MAX_CANONICALIZATION_DEPTH = 200;
 
+// RFC 8785 §3.2.2.2: a "lone surrogate" (an unpaired UTF-16 surrogate) MUST
+// cause a compliant JCS implementation to terminate with an error — the RFC's
+// rationale is the very interop / broken-signature risk verification guards.
+// ES2019 well-formed JSON.stringify ESCAPES it as \udXXX instead of throwing (a
+// non-compliant path that strict external verifiers reject), so the rejection
+// is an EXPLICIT pre-check. Mirrors src/crypto/canonicalize.ts so the two
+// implementations agree on every input, INCLUDING which they reject. Under the
+// `u` flag a valid surrogate pair is one non-surrogate code point, so
+// \p{Surrogate} matches ONLY an unpaired surrogate. When this throws inside
+// verifyEvidence's canonical-form step it is caught into a structured FAIL
+// verdict (never a crash) — matching strict verifiers that refuse the escaped
+// form.
+const LONE_SURROGATE = /\p{Surrogate}/u;
+
+const serializeJcsString = (/** @type {string} */ value) => {
+  if (LONE_SURROGATE.test(value)) {
+    throw new Error(
+      "string contains a lone UTF-16 surrogate (invalid Unicode); RFC 8785 §3.2.2.2 requires termination",
+    );
+  }
+  return JSON.stringify(value);
+};
+
 /** @param {unknown} value @returns {string} */
 export function jcsCanonicalize(value) {
   return jcsCanonicalizeAtDepth(value, 0);
@@ -49,7 +72,8 @@ function jcsCanonicalizeAtDepth(value, depth) {
   }
   if (value === null) return "null";
   const type = typeof value;
-  if (type === "boolean" || type === "string") return JSON.stringify(value);
+  if (type === "boolean") return JSON.stringify(value);
+  if (type === "string") return serializeJcsString(value);
   if (type === "number") {
     if (!Number.isFinite(value)) throw new Error("non-finite number in JCS input");
     return JSON.stringify(value);
@@ -70,7 +94,7 @@ function jcsCanonicalizeAtDepth(value, depth) {
     const member = /** @type {Record<string, unknown>} */ (value)[key];
     if (member === undefined) throw new Error(`undefined member "${key}" in JCS input`);
     if (i > 0) out += ",";
-    out += JSON.stringify(key) + ":" + jcsCanonicalizeAtDepth(member, depth + 1);
+    out += serializeJcsString(key) + ":" + jcsCanonicalizeAtDepth(member, depth + 1);
   }
   return out + "}";
 }
@@ -127,6 +151,161 @@ function didKeyFromJwkX(x) {
 // ---------------------------------------------------------------------------
 
 const DECISIONS = new Set(["allow", "review", "deny"]);
+
+// ---------------------------------------------------------------------------
+// Strict envelope schema (the v0.1 evidence-envelope shape).
+//
+// The offline verifier is the contract the rendered decision certificate is
+// built against, so the envelope-shape check enforces the FULL v0.1 shape — the
+// EXACT field set (no unknown fields), plus each field's type and format — not
+// merely that the required fields are present. A signed-but-malformed envelope
+// is only producible by the key holder (the signature already covers these
+// bytes), so this is robustness against a buggy signer, not an outsider-reachable
+// hole. The patterns mirror the signing side verbatim (src/evidence/envelope.ts,
+// src/rules/pack-schema.ts, src/rules/evaluator.ts); node built-ins only, like
+// the rest of this file. The envelope validated here is always the payload this
+// verifier itself JSON.parsed (never a caller object), so plain property reads
+// are safe — no hostile-getter snapshot is needed.
+// ---------------------------------------------------------------------------
+
+// The complete v0.1 field set, in a stable order for the "missing fields"
+// message. Reused as the allow-list for the no-unknown-fields check.
+const ENVELOPE_FIELDS = [
+  "envelope_version", "decision_id", "decision", "reason_codes", "matched_rules",
+  "rule_pack_id", "rule_pack_version", "rule_pack_hash", "evaluator_version",
+  "intent_hash", "scholar_signature_ref", "payment_intent", "decision_timestamp",
+];
+
+const SHA256_HEX = /^[0-9a-f]{64}$/; //                      sha256Hex (src/crypto/hash.ts)
+const SEMVER = /^\d+\.\d+\.\d+$/; //                          RulePackSchema.version
+const REASON_CODE = /^[A-Z][A-Z0-9_]*$/; //                   RuleSchema.reason_code
+const RULE_ID = /^[A-Z0-9][A-Z0-9_-]*$/; //                   RuleSchema.id
+const RULE_PACK_ID = /^[a-z0-9][a-z0-9-]*$/; //               RulePackSchema.id
+// decision_id is `ev-${randomUUID()}` (src/evidence/envelope.ts). Generic UUID
+// shape, NOT v4-pinned — the version/variant nibbles are inside [0-9a-f], so
+// pinning them would only risk rejecting a legitimately-generated id.
+const DECISION_ID = /^ev-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+const MATCHED_RULE_DECISIONS = new Set(["deny", "review"]); // RuleSchema.decision
+
+const isNonEmptyString = (/** @type {unknown} */ v) => typeof v === "string" && v.length > 0;
+const isPlainObject = (/** @type {unknown} */ v) =>
+  v !== null && typeof v === "object" && !Array.isArray(v);
+
+/** @param {Record<string, unknown>} obj @param {string[]} keys exact own-key set */
+const hasExactKeys = (obj, keys) => {
+  const own = Object.keys(obj);
+  return own.length === keys.length && keys.every((key) => Object.hasOwn(obj, key));
+};
+
+// A decision_timestamp must be EXACTLY a Date's ISO form — the only thing
+// `deps.now().toISOString()` (src/evidence/envelope.ts) ever emits. Round-trip
+// equality is the tightest correct check: it accepts that canonical form and
+// nothing else (a pattern alone would admit "2026-13-45T99:99:99.999Z").
+const isIsoTimestamp = (/** @type {unknown} */ v) => {
+  if (typeof v !== "string") return false;
+  const date = new Date(v);
+  return !Number.isNaN(date.getTime()) && date.toISOString() === v;
+};
+
+/** standards_ref: { status:"pending", note: non-empty string }, exact keys. */
+function validateStandardsRef(/** @type {unknown} */ value) {
+  if (!isPlainObject(value)) return "standards_ref is not an object";
+  if (!hasExactKeys(value, ["status", "note"])) return "standards_ref has unexpected or missing fields";
+  if (value.status !== "pending") return `standards_ref.status is ${JSON.stringify(value.status)}, expected "pending"`;
+  if (!isNonEmptyString(value.note)) return "standards_ref.note is not a non-empty string";
+  return null;
+}
+
+/** A matched_rules[] entry mirrors MatchedRule (src/rules/evaluator.ts) exactly. */
+function validateMatchedRule(/** @type {unknown} */ value, /** @type {number} */ index) {
+  const at = `matched_rules[${index}]`;
+  if (!isPlainObject(value)) return `${at} is not an object`;
+  if (!hasExactKeys(value, ["rule_id", "reason_code", "decision", "title", "description", "standards_ref"]))
+    return `${at} has unexpected or missing fields`;
+  if (typeof value.rule_id !== "string" || !RULE_ID.test(value.rule_id)) return `${at}.rule_id is malformed`;
+  if (typeof value.reason_code !== "string" || !REASON_CODE.test(value.reason_code)) return `${at}.reason_code is malformed`;
+  if (!MATCHED_RULE_DECISIONS.has(value.decision)) return `${at}.decision is not "deny" or "review"`;
+  if (!isNonEmptyString(value.title)) return `${at}.title is not a non-empty string`;
+  if (!isNonEmptyString(value.description)) return `${at}.description is not a non-empty string`;
+  const refError = validateStandardsRef(value.standards_ref);
+  return refError ? `${at}.${refError}` : null;
+}
+
+/** scholar_signature_ref: the UNCERTIFIED specimen (src/evidence/envelope.ts). */
+function validateScholarSignatureRef(/** @type {unknown} */ value) {
+  if (!isPlainObject(value)) return "scholar_signature_ref is not an object";
+  if (!hasExactKeys(value, ["status", "statement", "scholar_did", "signature", "certification_note"]))
+    return "scholar_signature_ref has unexpected or missing fields";
+  if (value.status !== "uncertified") return `scholar_signature_ref.status is ${JSON.stringify(value.status)}, expected "uncertified"`;
+  if (!isNonEmptyString(value.statement)) return "scholar_signature_ref.statement is not a non-empty string";
+  if (value.scholar_did !== null) return "scholar_signature_ref.scholar_did must be null on an UNCERTIFIED envelope";
+  if (value.signature !== null) return "scholar_signature_ref.signature must be null on an UNCERTIFIED envelope";
+  if (!isNonEmptyString(value.certification_note)) return "scholar_signature_ref.certification_note is not a non-empty string";
+  return null;
+}
+
+/**
+ * Strict structural validation of the v0.1 envelope, run AFTER the
+ * required-field-presence and decision-enum checks (so this only ever sees an
+ * object that already has every required field and a valid decision). Returns a
+ * precise failure reason naming the offending field, or null when the envelope
+ * conforms exactly. Shape only — cross-field consistency (intent_hash,
+ * rule_pack_hash, the replayed decision) is the job of the later checks.
+ *
+ * @param {Record<string, unknown>} envelope
+ * @returns {string | null}
+ */
+function validateEnvelopeStrict(envelope) {
+  // No unknown fields: the field set is exactly the v0.1 schema. Pairs with the
+  // exact-version pin below — together they bind this verifier to v0.1, so a
+  // future envelope_version is reported plainly instead of as an unknown-field
+  // cascade.
+  const unknown = Object.keys(envelope).filter((key) => !ENVELOPE_FIELDS.includes(key));
+  if (unknown.length > 0) return `unknown field(s): ${unknown.sort().join(", ")}`;
+
+  if (envelope.envelope_version !== "0.1.0")
+    return `envelope_version is ${JSON.stringify(envelope.envelope_version)} — this verifier handles "0.1.0"`;
+  if (typeof envelope.decision_id !== "string" || !DECISION_ID.test(envelope.decision_id))
+    return "decision_id is not an ev-<uuid> identifier";
+  if (!isIsoTimestamp(envelope.decision_timestamp))
+    return "decision_timestamp is not an ISO-8601 instant (Date.toISOString form)";
+  if (typeof envelope.evaluator_version !== "string" || !SEMVER.test(envelope.evaluator_version))
+    return "evaluator_version is not a semver string";
+  if (typeof envelope.rule_pack_id !== "string" || !RULE_PACK_ID.test(envelope.rule_pack_id))
+    return "rule_pack_id is malformed";
+  if (typeof envelope.rule_pack_version !== "string" || !SEMVER.test(envelope.rule_pack_version))
+    return "rule_pack_version is not a semver string";
+  if (typeof envelope.rule_pack_hash !== "string" || !SHA256_HEX.test(envelope.rule_pack_hash))
+    return "rule_pack_hash is not a lowercase sha256 hex digest";
+  if (typeof envelope.intent_hash !== "string" || !SHA256_HEX.test(envelope.intent_hash))
+    return "intent_hash is not a lowercase sha256 hex digest";
+
+  // reason_codes: array of reason-code strings (empty is valid — e.g. an allow
+  // that matched no rule). Shape only; that it equals the matched_rules' codes
+  // is re-derived by replay, not asserted here.
+  if (!Array.isArray(envelope.reason_codes)) return "reason_codes is not an array";
+  for (let i = 0; i < envelope.reason_codes.length; i++) {
+    const code = envelope.reason_codes[i];
+    if (typeof code !== "string" || !REASON_CODE.test(code))
+      return `reason_codes[${i}] is not a valid reason code`;
+  }
+
+  // matched_rules: array of MatchedRule (empty is valid — an allow/default).
+  if (!Array.isArray(envelope.matched_rules)) return "matched_rules is not an array";
+  for (let i = 0; i < envelope.matched_rules.length; i++) {
+    const ruleError = validateMatchedRule(envelope.matched_rules[i], i);
+    if (ruleError) return ruleError;
+  }
+
+  const scholarError = validateScholarSignatureRef(envelope.scholar_signature_ref);
+  if (scholarError) return scholarError;
+
+  // payment_intent is an opaque object (its hash is bound by intent_hash; its
+  // internal shape is the rule pack's concern, not the envelope schema's).
+  if (!isPlainObject(envelope.payment_intent)) return "payment_intent is not a JSON object";
+
+  return null;
+}
 
 /**
  * Verify a JWS-compact evidence artifact against a JWKS (and optionally the
@@ -274,16 +453,11 @@ export function verifyEvidence({ jws, jwks, pack }) {
   }
   pass("canonical-form", "Payload is canonical JSON (RFC 8785)", "payload bytes equal their canonical re-serialization");
 
-  // 6. Envelope shape
+  // 6. Envelope shape — the EXACT v0.1 schema, not just required-field presence.
   if (envelope === null || typeof envelope !== "object" || Array.isArray(envelope)) {
     return fail("envelope-shape", "Evidence envelope shape", "payload is not a JSON object");
   }
-  const required = [
-    "envelope_version", "decision_id", "decision", "reason_codes", "matched_rules",
-    "rule_pack_id", "rule_pack_version", "rule_pack_hash", "evaluator_version",
-    "intent_hash", "scholar_signature_ref", "payment_intent", "decision_timestamp",
-  ];
-  const missing = required.filter((field) => !(field in envelope));
+  const missing = ENVELOPE_FIELDS.filter((field) => !(field in envelope));
   if (missing.length > 0) {
     return fail("envelope-shape", "Evidence envelope shape", `missing fields: ${missing.join(", ")}`);
   }
@@ -291,7 +465,13 @@ export function verifyEvidence({ jws, jwks, pack }) {
     return fail("envelope-shape", "Evidence envelope shape",
       `decision ${JSON.stringify(envelope.decision)} is not one of allow/review/deny`);
   }
-  pass("envelope-shape", "Evidence envelope shape", `decision "${envelope.decision}", all required fields present`);
+  // Strict pass: exact field set (no unknown fields) + every field's type/format.
+  const schemaError = validateEnvelopeStrict(envelope);
+  if (schemaError !== null) {
+    return fail("envelope-shape", "Evidence envelope shape", schemaError);
+  }
+  pass("envelope-shape", "Evidence envelope shape",
+    `decision "${envelope.decision}", v0.1 schema valid (exact field set, types, formats)`);
 
   // 7. Intent hash
   const intentHash = sha256Hex(jcsCanonicalize(envelope.payment_intent));

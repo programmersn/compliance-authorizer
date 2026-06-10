@@ -9,7 +9,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
-import { canonicalize } from "../../src/crypto/canonicalize.ts";
+import { canonicalize, CanonicalizationError } from "../../src/crypto/canonicalize.ts";
 import { sha256Hex } from "../../src/crypto/hash.ts";
 import { buildJwks, generateSigningKey } from "../../src/crypto/keys.ts";
 import { buildEnvelope, signEnvelope } from "../../src/evidence/envelope.ts";
@@ -51,10 +51,29 @@ describe("fast-check global config (reproducible property runs)", () => {
 });
 
 describe("dual JCS implementations agree (sign-side TS vs verifier-side JS)", () => {
-  it("canonicalize === jcsCanonicalize for arbitrary JSON values", () => {
+  it("canonicalize === jcsCanonicalize for arbitrary JSON values (agree on output AND on rejection)", () => {
     fc.assert(
       fc.property(fc.jsonValue(), (value) => {
-        expect(canonicalize(value)).toBe(jcsCanonicalize(value));
+        // The two independent implementations must agree on EVERY input — both
+        // on the canonical bytes AND on REJECTING an input (e.g. invalid Unicode
+        // such as a lone surrogate, which RFC 8785 §3.2.2.2 requires terminating
+        // on). A divergence in EITHER direction is a forgery/interop bug.
+        let tsForm: string | undefined;
+        let tsThrew = false;
+        try {
+          tsForm = canonicalize(value);
+        } catch {
+          tsThrew = true;
+        }
+        let jsForm: string | undefined;
+        let jsThrew = false;
+        try {
+          jsForm = jcsCanonicalize(value);
+        } catch {
+          jsThrew = true;
+        }
+        expect(jsThrew).toBe(tsThrew);
+        if (!tsThrew) expect(tsForm).toBe(jsForm);
       }),
       { numRuns: 500 },
     );
@@ -97,6 +116,29 @@ describe("dual JCS implementations agree (sign-side TS vs verifier-side JS)", ()
       }),
       { numRuns: 200 },
     );
+  });
+});
+
+describe("RFC 8785 §3.2.2.2: both JCS implementations REJECT lone surrogates identically", () => {
+  // fc.jsonValue() does not synthesize lone surrogates (empirically 0 in tens of
+  // thousands of draws), so the agreement property above never exercises the
+  // both-throw branch from random input — these explicit cases pin that BOTH
+  // independent canonicalizers reject invalid Unicode, rather than silently
+  // escaping it as \udXXX the way a strict external verifier would refuse.
+  it.each([
+    ["lone high surrogate value", String.fromCharCode(0xd800)],
+    ["lone low surrogate value", String.fromCharCode(0xdc00)],
+    ["lone surrogate in a longer string", `tip ${String.fromCharCode(0xd834)}!`],
+    ["lone surrogate in an object KEY", { [String.fromCharCode(0xd800)]: 1 }],
+    ["lone surrogate nested in an array", ["ok", { note: String.fromCharCode(0xdc00) }]],
+  ])("both reject %s", (_label, value) => {
+    expect(() => canonicalize(value)).toThrow(CanonicalizationError);
+    expect(() => jcsCanonicalize(value)).toThrow(/lone UTF-16 surrogate/);
+  });
+
+  it("both ACCEPT a valid surrogate pair, byte-identically (only LONE surrogates are rejected)", () => {
+    const value = { label: String.fromCharCode(0xd83d, 0xde00), note: "ok" }; // 😀
+    expect(canonicalize(value)).toBe(jcsCanonicalize(value));
   });
 });
 

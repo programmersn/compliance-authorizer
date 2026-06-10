@@ -60,6 +60,11 @@ Expected: `RESULT: REPRODUCED — re-evaluation yields decision "deny"`, exit `0
 Replay re-runs the **pure, deterministic** evaluator on the cited
 `payment_intent` + pack and confirms the SAME decision the envelope records.
 
+A bare `replay` checks reproducibility **only** — its `exit 0` is **not** an
+authenticity verdict. To fold both into one exit code, add `--jwks` (here:
+`npm run replay:verified`), which also runs the offline verifier and requires
+**reproduced AND authentic** for `exit 0`.
+
 **Authenticity and reproducibility are different properties.** `verify.mjs`
 proves the bytes are authentic and intact; it deliberately does **not** re-run
 the evaluator. `replay` proves the cited decision re-derives. A fuller

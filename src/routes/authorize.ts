@@ -14,7 +14,9 @@ import {
   buildEnvelope,
   signEnvelope,
   type EnvelopeDeps,
+  type EvidenceEnvelope,
 } from "../evidence/envelope.ts";
+import { CanonicalizationError } from "../crypto/canonicalize.ts";
 import type { SigningKey } from "../crypto/keys.ts";
 import { evaluate, type MatchedRule } from "../rules/evaluator.ts";
 import type { LoadedRulePack } from "../rules/loader.ts";
@@ -145,13 +147,33 @@ export const authorizeRoute: FastifyPluginAsync<AuthorizeRouteOptions> = (
       }
 
       const evaluation = evaluate(intent, loadedPack.pack);
-      const envelope = buildEnvelope(
-        intent,
-        evaluation,
-        loadedPack,
-        options.envelopeDeps,
-      );
-      const evidenceArtifact = signEnvelope(envelope, options.signingKey);
+      let envelope: EvidenceEnvelope;
+      let evidenceArtifact: string;
+      try {
+        envelope = buildEnvelope(
+          intent,
+          evaluation,
+          loadedPack,
+          options.envelopeDeps,
+        );
+        evidenceArtifact = signEnvelope(envelope, options.signingKey);
+      } catch (error) {
+        if (error instanceof CanonicalizationError) {
+          // Invalid Unicode in the intent (e.g. a lone UTF-16 surrogate) cannot
+          // be canonicalized — RFC 8785 §3.2.2.2 requires the canonicalizer to
+          // terminate. This is a MALFORMED REQUEST (400 problem+json), NOT a
+          // decision: no envelope is produced (error ≠ deny). AJV cannot catch
+          // it upstream — a lone surrogate is syntactically valid JSON and
+          // satisfies Type.String().
+          throw new ProblemError(
+            400,
+            "Intent contains invalid Unicode",
+            "The payment intent contains invalid Unicode (a lone UTF-16 surrogate) that cannot be canonicalized per RFC 8785 §3.2.2.2. No decision was made and no evidence envelope exists for this request.",
+            `${PROBLEM_TYPE_BASE}/invalid-unicode`,
+          );
+        }
+        throw error;
+      }
 
       // A decision — ANY decision, including deny — is HTTP 200.
       return {

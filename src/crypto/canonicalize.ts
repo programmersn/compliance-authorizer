@@ -25,6 +25,36 @@ export class CanonicalizationError extends Error {
 export const MAX_CANONICALIZATION_DEPTH = 200;
 
 /**
+ * RFC 8785 §3.2.2.2: invalid Unicode such as a "lone surrogate" (an unpaired
+ * UTF-16 surrogate code unit, e.g. U+D800 with no following low surrogate)
+ * "MUST cause a compliant JCS implementation to terminate with an appropriate
+ * error" — the RFC's own rationale is the exact interop / broken-signature risk
+ * this canonicalizer exists to prevent. ES2019 "well-formed JSON.stringify"
+ * ESCAPES a lone surrogate as \udXXX rather than throwing, which is a
+ * NON-compliant code path: strict external JCS verifiers (the RFC author's Go
+ * reference, gowebpki/jcs, json-canon) REJECT that form, so an artifact carrying
+ * one would fail to verify elsewhere. Because JSON.stringify silently escapes
+ * (it never throws here), the rejection MUST be an explicit pre-check.
+ *
+ * Under the `u` flag a string is matched per code POINT, so a valid high+low
+ * surrogate pair is a single non-surrogate code point; the ONLY way
+ * \p{Surrogate} can match is an UNPAIRED (lone) surrogate. Mirrored verbatim in
+ * the standalone verifier's jcsCanonicalize (verifier/verify.mjs) so the two
+ * implementations agree on every input — INCLUDING which inputs they reject
+ * (property-tested, test/crypto/properties.test.ts).
+ */
+const LONE_SURROGATE = /\p{Surrogate}/u;
+
+function serializeString(value: string): string {
+  if (LONE_SURROGATE.test(value)) {
+    throw new CanonicalizationError(
+      "string contains a lone UTF-16 surrogate (invalid Unicode); RFC 8785 §3.2.2.2 requires termination",
+    );
+  }
+  return JSON.stringify(value);
+}
+
+/**
  * Serialize a JSON-compatible value to its RFC 8785 canonical form.
  *
  * - Object members are sorted by UTF-16 code units of their names (§3.2.3),
@@ -56,7 +86,7 @@ function canonicalizeAtDepth(value: unknown, depth: number): string {
       }
       return JSON.stringify(value);
     case "string":
-      return JSON.stringify(value);
+      return serializeString(value);
     case "object":
       break; // handled below
     default:
@@ -86,7 +116,7 @@ function canonicalizeAtDepth(value: unknown, depth: number): string {
           `undefined member "${key}" cannot be canonicalized`,
         );
       }
-      return `${JSON.stringify(key)}:${canonicalizeAtDepth(member, depth + 1)}`;
+      return `${serializeString(key)}:${canonicalizeAtDepth(member, depth + 1)}`;
     });
   return `{${members.join(",")}}`;
 }

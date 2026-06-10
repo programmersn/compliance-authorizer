@@ -24,7 +24,7 @@ separate is the whole point of this design:
 | Property | Question | Tool | What it does **not** do |
 |---|---|---|---|
 | **Authenticity** | Were these exact bytes signed by the issuer's key, intact and canonical? | `verifier/verify.mjs` (node built-ins only, zero server trust) | It does **not** re-run the evaluator. |
-| **Reproducibility** | Does the cited decision re-derive when you re-run the evaluator on the cited intent + pack? | `scripts/replay.ts` (`npm run replay`) | It does **not** check the signature. |
+| **Reproducibility** | Does the cited decision re-derive when you re-run the evaluator on the cited intent + pack? | `scripts/replay.ts` (`npm run replay`) | By default it does **not** check the signature (pass `--jwks` to add an authenticity gate — see §4). |
 
 An artifact can be **authentic yet not reproducible**: imagine an envelope whose
 `decision` was overwritten from `deny` to `allow` and then **re-signed** with the
@@ -104,7 +104,9 @@ The verifier (node built-ins only, **zero** network, **no** import from this
 service's `src/`) checks, in order: JWS structure; `alg` is exactly `EdDSA`
 (`alg:none` and any substituted algorithm are rejected **before** key material is
 touched); key resolution with `kid == thumbprint`; the Ed25519 signature; that
-the payload **is** its own RFC 8785 canonical form; the envelope shape;
+the payload **is** its own RFC 8785 canonical form; the envelope's **exact v0.1
+schema** (precise field set with no unknown fields, plus every field's type and
+format — not merely required-field presence);
 `intent_hash == sha256(JCS(payment_intent))`; and (with `--pack`)
 `rule_pack_hash == sha256(JCS(pack))` plus `id`/`version` and the `D12`
 `evaluator_version` consistency. **Exit `0` = PASS** (authentic); **exit `1` =
@@ -132,6 +134,28 @@ not reproduce — the tampered-then-re-signed case above — or pin an
 `evaluator_version` this engine does not run, `D12`, in which case replay could
 not be *attempted* and the verdict is "unknown", not "mismatch"); **exit `2` =
 operator/input error**.
+
+#### Optional: fold authenticity into one verdict with `--jwks`
+
+By design, replay checks reproducibility **only** — a bare `exit 0` means "the
+decision re-derives", **not** "the bytes are authentic". Automation that keys off
+the exit code alone must not confuse the two. Pass `--jwks` to additionally run
+the independent verifier over the same artifact and require **both** properties
+for a clean `exit 0`:
+
+```sh
+npm run replay:verified   # ≡ replay … --jwks examples/jwks.json
+# or directly:
+node --experimental-strip-types --no-warnings scripts/replay.ts \
+  --evidence evidence.jws --pack pack.json --jwks jwks.json
+```
+
+With `--jwks`, **exit `0` = REPRODUCED *and* AUTHENTIC**; **exit `1`** if either
+the decision did not reproduce **or** the artifact is not authentic; **exit `2`**
+for an operator/input error. The two verdicts are still reported separately in
+the output — `--jwks` is an explicit opt-in, and the default path still never
+touches the signature (the standalone verifier remains the independent
+authenticity tool; replay just calls it for you when asked).
 
 Because the same intent + same `rule_pack_hash` + same `evaluator_version`
 always yields the same decision, anyone with these public inputs reaches the

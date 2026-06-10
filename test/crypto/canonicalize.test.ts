@@ -134,4 +134,28 @@ describe("strictness — hash inputs are never guessed", () => {
     const shallow = "[".repeat(50) + "1" + "]".repeat(50);
     expect(canonicalize(JSON.parse(shallow))).toBe(shallow);
   });
+
+  // RFC 8785 §3.2.2.2: invalid Unicode (a lone surrogate) MUST terminate the
+  // canonicalizer. JSON.stringify would silently ESCAPE it as \udXXX (the
+  // non-compliant ES2019 path strict external verifiers reject), so the
+  // canonicalizer rejects it explicitly instead.
+  it.each([
+    ["a lone high surrogate value", String.fromCharCode(0xd800)],
+    ["a lone low surrogate value", String.fromCharCode(0xdc00)],
+    ["a lone surrogate inside a longer string", `ok${String.fromCharCode(0xd834)}bad`],
+  ])("throws on %s instead of silently escaping it", (_label, value) => {
+    expect(() => canonicalize(value)).toThrow(CanonicalizationError);
+    expect(() => canonicalize(value)).toThrow(/lone UTF-16 surrogate/);
+  });
+
+  it("throws on a lone surrogate in an object KEY, not only a value", () => {
+    expect(() => canonicalize({ [String.fromCharCode(0xd800)]: 1 })).toThrow(
+      CanonicalizationError,
+    );
+  });
+
+  it("ACCEPTS a valid surrogate pair — a LONE surrogate is the only rejected Unicode case", () => {
+    const EMOJI = String.fromCharCode(0xd83d, 0xde00); // 😀 (a valid high+low pair)
+    expect(canonicalize({ label: EMOJI })).toBe(`{"label":"${EMOJI}"}`);
+  });
 });

@@ -3,6 +3,43 @@
 All notable changes to this project are documented in this file.
 Versions follow a 4-digit MAJOR.MINOR.PATCH.MICRO scheme; dates are YYYY-MM-DD.
 
+## [0.2.1.0] - 2026-06-10
+
+Deferred hardening from the v0.2.0.0 cross-vendor review. All three items are key-holder-only
+robustness (a signed-but-malformed artifact is only producible by the issuer, not an
+outsider-reachable hole), cleared before the W3 web surfaces so the viewer renders against a
+strict, RFC-defensible verifier contract.
+
+### Security
+
+- Strict evidence-envelope schema in the offline verifier (`verifier/verify.mjs`): the
+  envelope-shape check now enforces the EXACT v0.1 schema — the precise field set (unknown
+  fields are rejected), `envelope_version` pinned to `0.1.0`, and every field's type and format
+  (sha256-hex hashes, semver versions, `ev-<uuid>` decision id, `Date.toISOString` timestamp,
+  `reason_codes`/`matched_rules` array shapes, the UNCERTIFIED `scholar_signature_ref` shape) —
+  not merely required-field presence. `POST /verify` inherits it (it reuses the same
+  `verifyEvidence`), so the served and offline verdicts stay identical.
+- RFC 8785 §3.2.2.2 lone-surrogate rejection on BOTH canonicalizers
+  (`src/crypto/canonicalize.ts` and `verifier/verify.mjs`): invalid Unicode (an unpaired UTF-16
+  surrogate) now terminates canonicalization with an error instead of being silently escaped as
+  `\udXXX` by ES2019 well-formed `JSON.stringify`. That escaping is a non-compliant code path
+  the RFC's own rationale flags ("interoperability issues including broken signatures") and that
+  the RFC author's Go reference and strict verifiers (`gowebpki/jcs`, `json-canon`) reject — so
+  an escaped-surrogate artifact would have failed to verify elsewhere. At `POST /authorize` an
+  intent carrying a lone surrogate is now a 400 problem+json (malformed request), never a signed
+  envelope (error ≠ deny). The two canonicalizers are property-tested to agree on every input,
+  including which inputs they reject.
+
+### Added
+
+- `scripts/replay.ts` optional `--jwks` combined verdict (and `npm run replay:verified`). By
+  default replay stays reproducibility-only and exit 0 is loudly labelled "authenticity NOT
+  checked"; with `--jwks` it also runs the independent verifier and requires reproduced AND
+  authentic for exit 0 (exit 1 if either fails). This closes a conflation where automation
+  reading only the exit code could mistake a bare "decision re-derived" for "valid evidence,"
+  while preserving the two-tools/two-properties separation — the default path still never touches
+  the signature.
+
 ## [0.2.0.0] - 2026-06-09
 
 ### Added

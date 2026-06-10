@@ -1,6 +1,6 @@
 {
   "name": "compliance-authorizer",
-  "version": "0.2.0.0",
+  "version": "0.2.1.0",
   "description": "Runtime compliance authorization for agentic payments — signed allow/deny/review decisions with verifiable evidence envelopes. Ships an uncertified synthetic demo rule pack (Shariah profile v0.1): not a fatwa / not certified / not production advice.",
   "type": "module",
   "license": "MIT",
@@ -19,6 +19,7 @@
     "verify": "node verifier/verify.mjs",
     "verify:fixture": "node verifier/verify.mjs --evidence examples/casino-hotel.evidence.jws --jwks examples/jwks.json --pack examples/pack.json",
     "replay": "node --experimental-strip-types --no-warnings scripts/replay.ts --evidence examples/casino-hotel.evidence.jws --pack examples/pack.json",
+    "replay:verified": "node --experimental-strip-types --no-warnings scripts/replay.ts --evidence examples/casino-hotel.evidence.jws --pack examples/pack.json --jwks examples/jwks.json",
     "build:example": "node --experimental-strip-types --no-warnings scripts/build-example.ts"
   },
   "dependencies": {
