@@ -52,11 +52,22 @@ The web surfaces (W3-4: playground, evidence viewer) are not built yet. The lock
 layer is in [`DESIGN.md`](./DESIGN.md) and the build tasks are in [`TODOS.md`](./TODOS.md).
 Read `DESIGN.md` before building.
 
+## Documentation
+
+| Document | What it covers |
+|---|---|
+| [`docs/getting-started.md`](./docs/getting-started.md) | Tutorial: clone to first signed decision in 5 minutes |
+| [`REPRODUCIBILITY.md`](./REPRODUCIBILITY.md) | Zero-trust walkthrough: verify and replay any decision offline |
+| [`examples/README.md`](./examples/README.md) | Committed byte-reproducible worked example |
+| [`docs/evaluator-semantics.md`](./docs/evaluator-semantics.md) | Pinned evaluator contract (operators, field resolution, D12) |
+| [`CONTRIBUTING.md`](./CONTRIBUTING.md) | Development setup, testing, conventions |
+| [`DESIGN.md`](./DESIGN.md) | Locked design layer (read before building W3-4) |
+
 ## Configuration
 
 | Variable | Default | Description |
 |---|---|---|
-| `PORT` | `3000` | HTTP port the service listens on. Must be an integer in `[1, 65535]`. |
+| `PORT` | `8787` | HTTP port the service listens on. Must be an integer in `[1, 65535]`. |
 | `KEYS_DIR` | `.keys/` | Directory where the Ed25519 signing key is stored (gitignored). Created and populated automatically on first boot. |
 
 ## License
