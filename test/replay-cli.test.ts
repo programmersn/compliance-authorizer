@@ -629,4 +629,102 @@ describe("replay --jwks combined verdict (opt-in authenticity)", () => {
     expect(out).not.toContain("INPUT ERROR");
     expect(out).not.toContain("supply the cited pack"); // disambiguation not bypassed into exit 2
   });
+
+  it("a padded (non-canonical base64url) segment + --jwks → AUTHENTICITY FAIL (exit 1), not exit 2", () => {
+    // Codex P2 follow-up: the JWS-segment guards are upstream of the shape gate
+    // and must obey the same combined-mode contract. Appending `=` to a segment
+    // is the cheapest possible malleation — Node's lenient decoder still reads
+    // the same bytes — and verify.mjs rejects it as a structure FAIL (exit 1),
+    // so replay --jwks must not soften it to an exit-2 operator error.
+    const [header, payloadB64, signature] = readFileSync(evidencePath, "utf8")
+      .trim()
+      .split(".") as [string, string, string];
+    const paddedPath = join(workDir, "padded-payload-jwks.jws");
+    writeFileSync(paddedPath, `${header}.${payloadB64}=.${signature}`, "utf8");
+    const result = spawnSync(
+      process.execPath,
+      [
+        "--experimental-strip-types",
+        "--no-warnings",
+        replayScript,
+        "--evidence",
+        paddedPath,
+        "--pack",
+        genuinePackPath,
+        "--jwks",
+        genuineJwksPath,
+      ],
+      { encoding: "utf8" },
+    );
+    const out = result.stdout + result.stderr;
+    expect(result.status).toBe(1); // the verifier's structure FAIL, not an operator error
+    expect(out).toContain("MALFORMED ARTIFACT");
+    expect(out).toContain("canonical base64url");
+    expect(out).toContain("AUTHENTICITY (--jwks): FAIL");
+    expect(out).not.toContain("INPUT ERROR");
+  });
+
+  it("a truncated (2-segment) artifact + --jwks → AUTHENTICITY FAIL (exit 1), not exit 2", () => {
+    // Same contract, structure guard: verify.mjs classifies a non-3-segment
+    // string as a structure FAIL (exit 1), so the combined verdict must agree.
+    const [header, payloadB64] = readFileSync(evidencePath, "utf8")
+      .trim()
+      .split(".") as [string, string, string];
+    const truncatedPath = join(workDir, "truncated-jwks.jws");
+    writeFileSync(truncatedPath, `${header}.${payloadB64}`, "utf8");
+    const result = spawnSync(
+      process.execPath,
+      [
+        "--experimental-strip-types",
+        "--no-warnings",
+        replayScript,
+        "--evidence",
+        truncatedPath,
+        "--pack",
+        genuinePackPath,
+        "--jwks",
+        genuineJwksPath,
+      ],
+      { encoding: "utf8" },
+    );
+    const out = result.stdout + result.stderr;
+    expect(result.status).toBe(1);
+    expect(out).toContain("MALFORMED ARTIFACT");
+    expect(out).toContain("3-segment");
+    expect(out).toContain("AUTHENTICITY (--jwks): FAIL");
+    expect(out).not.toContain("INPUT ERROR");
+  });
+
+  it("a non-object JSON payload + --jwks → AUTHENTICITY FAIL (exit 1), not exit 2", () => {
+    // Same contract, payload guard: a payload tampered into a JSON array still
+    // breaks the signature, and verify.mjs renders a FAIL verdict on those
+    // bytes — replay --jwks must not call the forgery an operator error.
+    const [header, , signature] = readFileSync(evidencePath, "utf8")
+      .trim()
+      .split(".") as [string, string, string];
+    const arrayPayload = Buffer.from("[]", "utf8").toString("base64url");
+    const nonObjectPath = join(workDir, "non-object-payload-jwks.jws");
+    writeFileSync(nonObjectPath, `${header}.${arrayPayload}.${signature}`, "utf8");
+    const result = spawnSync(
+      process.execPath,
+      [
+        "--experimental-strip-types",
+        "--no-warnings",
+        replayScript,
+        "--evidence",
+        nonObjectPath,
+        "--pack",
+        genuinePackPath,
+        "--jwks",
+        genuineJwksPath,
+      ],
+      { encoding: "utf8" },
+    );
+    const out = result.stdout + result.stderr;
+    expect(result.status).toBe(1);
+    expect(out).toContain("MALFORMED ARTIFACT");
+    expect(out).toContain("JSON object envelope");
+    expect(out).toContain("AUTHENTICITY (--jwks): FAIL");
+    expect(out).not.toContain("INPUT ERROR");
+  });
 });

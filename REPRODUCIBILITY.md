@@ -156,13 +156,17 @@ node --experimental-strip-types --no-warnings scripts/replay.ts \
 
 With `--jwks`, **exit `0` = REPRODUCED *and* AUTHENTIC**; **exit `1`** if either
 the decision did not reproduce **or** the artifact is not authentic; **exit `2`**
-for an operator/input error. A **malformed** envelope (one failing the
-canonicalizability or strict-schema gate) is exit `1` here, **not** exit `2`: in
-combined mode the verifier's verdict wins, and `verify.mjs` classifies those
-same bytes as not-valid-evidence — signature first, so forged-then-malformed
-tampering is named an authenticity FAIL rather than softened to an operator
-error an exit-code-only consumer would ignore. Only bare replay, having no
-signature to consult, reads a malformed envelope as exit `2`. The two verdicts
+for an operator/input error. A **malformed** evidence artifact — bad JWS
+structure, a non-canonical (e.g. padded) base64url segment, a non-JSON-object
+payload, or an envelope failing the canonicalizability or strict-schema gate —
+is exit `1` here, **not** exit `2`: in combined mode the verifier's verdict
+wins, and `verify.mjs` classifies all of those bytes as not-valid-evidence, so
+forged-then-malformed tampering (even the cheapest malleation, appending `=` to
+a segment) is named an authenticity FAIL rather than softened to an operator
+error an exit-code-only consumer would ignore. Exit `2` with `--jwks` is
+reserved for the operator's own inputs: bad usage, an unreadable file, an
+unparseable pack or JWKS. Only bare replay, having no signature to consult,
+reads a malformed artifact as exit `2`. The two verdicts
 are still reported separately in the output — `--jwks` is an explicit opt-in,
 and the default path still never touches the signature (the standalone verifier
 remains the independent authenticity tool; replay just calls it for you when

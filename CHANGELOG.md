@@ -69,15 +69,19 @@ malformed artifacts and both keep error ≠ verdict.
 - `scripts/replay.ts` now rejects a non-canonical base64url JWS segment (e.g. one carrying `=`
   padding) as malformed input (exit 2), matching the offline verifier; bare replay previously
   accepted the lenient encoding and could report `REPRODUCED` for a non-compact JWS.
-- In `--jwks` mode a MALFORMED artifact (one failing the canonicalizability or strict-schema
-  gate) is now classified by the verifier's verdict — authenticity FAIL, exit 1 — instead of an
-  exit-2 operator error, matching what `verify.mjs` says about the same bytes (signature first,
-  then canonical form, then schema; all FAIL verdicts there). Previously the cheapest tampering
-  (adding an unknown field, or breaking `rule_pack_hash`'s hex format) was reported as an
+- In `--jwks` mode a MALFORMED evidence artifact — bad JWS structure, a non-canonical (padded)
+  base64url segment, a non-JSON-object payload, or an envelope failing the canonicalizability
+  or strict-schema gate — is now classified by the verifier's verdict (authenticity FAIL,
+  exit 1) instead of an exit-2 operator error, matching what `verify.mjs` says about the same
+  bytes (structure, encoding, signature, canonical form and schema failures are all FAIL
+  verdicts there). Previously the cheapest tampering (appending `=` padding to a segment,
+  adding an unknown field, or breaking `rule_pack_hash`'s hex format) was reported as an
   operator/input condition, downgrading the forgery signal for exit-code-only automation and
   bypassing the pack-mismatch disambiguation that exists to name `rule_pack_*` tampering an
-  authenticity FAIL. Bare replay (no signature to consult) keeps exit 2 — the documented
-  two-tools boundary. (Surfaced post-/ship by the cross-vendor Codex review on the PR.)
+  authenticity FAIL. With `--jwks`, exit 2 is reserved for the operator's own inputs (bad
+  usage, unreadable files, an unparseable pack/JWKS); bare replay (no signature to consult)
+  keeps exit 2 for malformed artifacts too — the documented two-tools boundary. (Both rounds
+  surfaced post-/ship by the cross-vendor Codex review on the PR.)
 
 ## [0.2.0.0] - 2026-06-09
 

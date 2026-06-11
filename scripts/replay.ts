@@ -106,10 +106,11 @@ function malformedArtifact(
       console.log(`  ${UNCERTIFIED_NOTE}`);
       process.exit(1);
     }
-    // Unreachable by construction: the verifier re-runs the same shared
-    // canonical-form/shape checks that just failed here. If the tools ever
-    // diverge, that is a bug in one of them — an input/tooling condition to
-    // report, never a verdict.
+    // Unreachable by construction: every caller rejects on a property the
+    // verifier re-checks itself (JWS structure, segment encoding, payload
+    // JSON-ness via signature/canonical-form, canonicalizability, the shared
+    // strict schema). If the tools ever diverge, that is a bug in one of
+    // them — an input/tooling condition to report, never a verdict.
     inputError(
       `${detail} (yet the verifier accepted the artifact — ` +
         "canonicalizer/schema divergence between the two tools, please report)",
@@ -146,37 +147,16 @@ function main(): void {
     process.exit(2);
   }
 
-  // Read + decode. Any file/parse problem is an OPERATOR error (exit 2), never
-  // exit 1 — that code is a verdict, and an unreadable file means nothing ran.
+  // Read the operator's input FILES. Any problem here — an unreadable evidence,
+  // pack or JWKS file, or an unparseable pack/JWKS — is an OPERATOR error
+  // (exit 2) in EVERY mode, never exit 1: that code is a verdict, and a missing
+  // side input means nothing ran. The pack and JWKS load FIRST so the
+  // evidence-ARTIFACT guards below can defer to the verifier in --jwks mode
+  // (deferral needs the JWKS in hand before the first content check).
   let jws: string;
-  let envelope: Record<string, unknown>;
   let pack;
   let jwks: { keys?: unknown[] } | undefined;
   try {
-    jws = readFileSync(values.evidence, "utf8").trim();
-    const parts = jws.split(".");
-    if (parts.length !== 3 || parts.some((segment) => segment.length === 0)) {
-      inputError("evidence is not a 3-segment JWS-compact artifact");
-    }
-    // RFC 7515 segments are canonical, UNPADDED base64url. Node's decoder is
-    // lenient (it ignores `=` padding and a final char's don't-care bits), so many
-    // distinct strings decode to the same bytes. A non-canonical encoding is a
-    // malformed artifact (the strict verifier rejects it too via isCanonicalB64url);
-    // reject it here as an operator error so bare replay can never read a
-    // non-compact JWS as "reproduced."
-    if (!parts.every((segment) => isCanonicalB64url(segment))) {
-      inputError(
-        "evidence is not canonical base64url (RFC 7515) — the artifact is malformed",
-      );
-    }
-    const payloadB64 = parts[1] as string;
-    const decoded: unknown = JSON.parse(
-      Buffer.from(payloadB64, "base64url").toString("utf8"),
-    );
-    if (decoded === null || typeof decoded !== "object" || Array.isArray(decoded)) {
-      inputError("evidence payload is not a JSON object envelope");
-    }
-    envelope = decoded as Record<string, unknown>;
     // Load WITHOUT enforcing the current evaluator version. A foreign-evaluator
     // pack (a genuine historical or future artifact) must be validated and hashed,
     // then handed to replayEnvelope, which classifies it as a D12 "could not be
@@ -186,14 +166,55 @@ function main(): void {
     pack = loadRulePack(readFileSync(values.pack, "utf8"), {
       enforceEvaluatorVersion: false,
     });
-    // --jwks is OPTIONAL; when given, an unreadable/unparseable JWKS is still an
-    // operator error (nothing was verified), never an authenticity verdict.
+    // --jwks is OPTIONAL; when given, an unreadable/unparseable JWKS FILE is still
+    // an operator error (nothing was verified), never an authenticity verdict.
     if (values.jwks !== undefined) {
       jwks = JSON.parse(readFileSync(values.jwks, "utf8")) as { keys?: unknown[] };
     }
+    jws = readFileSync(values.evidence, "utf8").trim();
   } catch (error) {
     inputError(error instanceof Error ? error.message : String(error));
   }
+
+  // Evidence-ARTIFACT content guards. From here on a failure is a property of
+  // the artifact's BYTES, not of the operator's files, so the exit code is
+  // MODE-DEPENDENT — see malformedArtifact(): bare replay reads a malformed
+  // artifact as an operator error (exit 2); with --jwks the verifier's FAIL
+  // verdict wins (exit 1), since verify.mjs classifies every one of these as
+  // not-valid-evidence and trivial malleation (e.g. appending `=` padding to a
+  // segment) must not silence automation that alerts on authenticity failures.
+  const parts = jws.split(".");
+  if (parts.length !== 3 || parts.some((segment) => segment.length === 0)) {
+    malformedArtifact("evidence is not a 3-segment JWS-compact artifact", jws, jwks);
+  }
+  // RFC 7515 segments are canonical, UNPADDED base64url. Node's decoder is
+  // lenient (it ignores `=` padding and a final char's don't-care bits), so many
+  // distinct strings decode to the same bytes. A non-canonical encoding is a
+  // malformed artifact (the strict verifier rejects it too via isCanonicalB64url);
+  // reject it here so bare replay can never read a non-compact JWS as "reproduced."
+  if (!parts.every((segment) => isCanonicalB64url(segment))) {
+    malformedArtifact(
+      "evidence is not canonical base64url (RFC 7515) — the artifact is malformed",
+      jws,
+      jwks,
+    );
+  }
+  const payloadB64 = parts[1] as string;
+  let decoded: unknown;
+  try {
+    decoded = JSON.parse(Buffer.from(payloadB64, "base64url").toString("utf8"));
+  } catch (error) {
+    malformedArtifact(
+      "evidence payload is not valid JSON — " +
+        (error instanceof Error ? error.message : String(error)),
+      jws,
+      jwks,
+    );
+  }
+  if (decoded === null || typeof decoded !== "object" || Array.isArray(decoded)) {
+    malformedArtifact("evidence payload is not a JSON object envelope", jws, jwks);
+  }
+  const envelope = decoded as Record<string, unknown>;
 
   const checkingAuthenticity = jwks !== undefined;
   console.log(
