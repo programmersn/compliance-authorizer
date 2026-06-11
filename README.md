@@ -37,10 +37,11 @@ property-based, canonicalization invariance) are in.
 historical verifying keys (RFC 7517) so any envelope stays offline-verifiable across key
 rotation. `GET /rule-packs/:id/:version` serves the exact canonical pack bytes a decision
 was made against (sha256 of the response body equals the envelope's `rule_pack_hash`).
-`POST /verify` accepts any evidence artifact and always returns HTTP 200 with two distinct
-verdict fields: `valid` (was this artifact signed by the issuer's key, intact and
-canonical?) and `reproducibility` (does the cited decision re-derive against the cited
-pack?). `valid:false` is a verdict, not a 4xx; error ≠ deny on the verification path too. Decision replay (`scripts/replay.ts`) re-derives the decision from the cited intent
+`POST /verify` accepts an evidence artifact; a **well-formed** request always returns HTTP 200
+with two distinct verdict fields: `valid` (authenticity — was this signed by the issuer's key,
+intact and canonical?) and `reproducibility` (does the cited decision re-derive against the cited
+pack?). `valid:false` is a verdict, not a 4xx. A malformed request (missing field, wrong type,
+extra field) returns 400 problem+json — error ≠ deny on the verification path too. Decision replay (`scripts/replay.ts`) re-derives the decision from the cited intent
 and pack; `--jwks` adds an authenticity gate so a single exit code covers both properties.
 The verifier enforces the EXACT v0.1 envelope schema and rejects RFC 8785 lone surrogates
 on both canonicalizers. `npm test` covers 218 tests across 14 test files. See
