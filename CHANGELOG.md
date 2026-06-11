@@ -5,10 +5,14 @@ Versions follow a 4-digit MAJOR.MINOR.PATCH.MICRO scheme; dates are YYYY-MM-DD.
 
 ## [0.2.1.0] - 2026-06-10
 
-Deferred hardening from the v0.2.0.0 cross-vendor review. All three items are key-holder-only
-robustness (a signed-but-malformed artifact is only producible by the issuer, not an
-outsider-reachable hole), cleared before the W3 web surfaces so the viewer renders against a
-strict, RFC-defensible verifier contract.
+Deferred hardening from the v0.2.0.0 cross-vendor review. The three schema/canonicalization
+items are key-holder-only robustness (a signed-but-malformed artifact is only producible by the
+issuer, not an outsider-reachable hole), cleared before the W3 web surfaces so the viewer renders
+against a strict, RFC-defensible verifier contract. A pre-merge cross-model review of this work
+then surfaced a parity gap on the offline replay CLI (operator-facing, not key-holder-only): it
+did not enforce that same strict schema and mis-typed exit codes on operator errors. The Fixed
+section below closes it so the two verification tools (verify and replay) reject the identical
+malformed artifacts and both keep error ≠ verdict.
 
 ### Security
 
@@ -38,7 +42,32 @@ strict, RFC-defensible verifier contract.
   authentic for exit 0 (exit 1 if either fails). This closes a conflation where automation
   reading only the exit code could mistake a bare "decision re-derived" for "valid evidence,"
   while preserving the two-tools/two-properties separation — the default path still never touches
-  the signature.
+  the signature. In `--jwks` mode authenticity is settled BEFORE the pack-mismatch operator-error
+  path: a FORGED artifact (e.g. a tampered `rule_pack_hash`, which breaks the signature) is an
+  authenticity FAIL (exit 1), never misreported as an exit-2 "supply the cited pack" operator
+  error; an authentic artifact for which the operator supplied the wrong `--pack` still exits 2.
+  A non-canonicalizable (lone-surrogate) envelope is rejected uniformly as a malformed artifact
+  (exit 2) on every branch, including the D12 evaluator-mismatch path.
+
+### Fixed
+
+- The offline replay CLI (`scripts/replay.ts`) now enforces the strict v0.1 envelope schema
+  before re-evaluation, reusing the verifier's own `validateEnvelopeShape` (the exact check
+  `POST /verify` runs) as the single source of truth — so the two verification tools reject the
+  identical malformed artifacts. Bare replay previously had NO schema gate: a structurally-valid
+  envelope missing a required field could crash the tool with an uncaught canonicalization error
+  (Node exit 1, the verdict code) or, worse, emit a false `REPRODUCED` (exit 0) to automation
+  reading only the exit code. Both are now a clean operator error (exit 2, "nothing was
+  replayed"). A defensive guard also wraps the re-evaluation so a canonicalization failure can
+  never resurface as an uncaught exit-1 stack — mirroring the verifier's "a crash is never a
+  verdict" discipline.
+- Bad CLI usage — an unknown flag, a stray positional, or a value-option given with no value —
+  now exits 2 (operator error) in BOTH `scripts/replay.ts` and `verifier/verify.mjs`. Previously
+  `parseArgs` threw before the input guard, so Node exited 1 (the "not valid evidence / not
+  reproduced" verdict code) on a mere typo, which automation chaining the tools would misread.
+- `scripts/replay.ts` now rejects a non-canonical base64url JWS segment (e.g. one carrying `=`
+  padding) as malformed input (exit 2), matching the offline verifier; bare replay previously
+  accepted the lenient encoding and could report `REPRODUCED` for a non-compact JWS.
 
 ## [0.2.0.0] - 2026-06-09
 
