@@ -133,7 +133,9 @@ the result to the envelope's `decision` / `reason_codes` / `matched_rules`.
 not reproduce — the tampered-then-re-signed case above — or pin an
 `evaluator_version` this engine does not run, `D12`, in which case replay could
 not be *attempted* and the verdict is "unknown", not "mismatch"); **exit `2` =
-operator/input error**.
+operator/input error** (bad usage, unreadable/unparseable input, or an envelope
+that fails the strict v0.1 schema — replay enforces the **same** schema gate the
+verifier runs, so both tools reject the identical malformed artifacts).
 
 #### Optional: fold authenticity into one verdict with `--jwks`
 
