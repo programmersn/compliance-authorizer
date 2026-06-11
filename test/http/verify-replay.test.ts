@@ -84,8 +84,11 @@ const foreignEvaluatorArtifact = signEnvelope(
 // D12 is the SOLE pack-bound failure (cited.hash === envelope.rule_pack_hash).
 // Here the hash is wrong, so this stays INAUTHENTIC (valid:false) — a
 // hash-mismatched envelope is never authentic evidence, however it is re-signed.
+// The bogus hash is WELL-FORMED (64 lowercase hex) on purpose: a malformed hash
+// would now be caught earlier by the strict envelope-shape schema, so we keep it
+// shape-valid to exercise the deeper pack-hash semantic check this guards.
 const combinedTamperArtifact = signEnvelope(
-  { ...genuineEnvelope, evaluator_version: "0.9.9", rule_pack_hash: "deadbeef" },
+  { ...genuineEnvelope, evaluator_version: "0.9.9", rule_pack_hash: "deadbeef".repeat(8) },
   signingKey,
 );
 

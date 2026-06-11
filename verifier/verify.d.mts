@@ -25,6 +25,21 @@ export interface VerificationResult {
 
 export function jcsCanonicalize(value: unknown): string;
 
+/**
+ * True iff `text` is canonical, unpadded RFC 7515 base64url (decode then
+ * re-encode reproduces the input). Reused by the offline replay CLI to reject a
+ * non-canonical JWS segment as malformed input.
+ */
+export const isCanonicalB64url: (text: string) => boolean;
+
+/**
+ * Complete v0.1 envelope-shape validation: returns a precise failure reason, or
+ * null when the envelope conforms exactly (object, exact required field set,
+ * valid `decision`, and every field's type/format). Shape only. Exported so the
+ * offline replay CLI gates malformed artifacts on the same single source of truth.
+ */
+export function validateEnvelopeShape(envelope: unknown): string | null;
+
 export function verifyEvidence(input: {
   jws: string;
   jwks: { keys?: unknown[] };

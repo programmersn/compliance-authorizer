@@ -349,6 +349,32 @@ describe("negative-alg matrix — real attacks, all rejected", () => {
     expect(canonicalCheck?.detail).toContain("depth bound");
   });
 
+  it("the standalone verifier FAILS a self-signed payload carrying a lone surrogate at canonical-form (RFC 8785 §3.2.2.2), never a crash", () => {
+    const key = generateSigningKey();
+    // A payload whose string holds an escaped LONE high surrogate. JSON.parse
+    // accepts it (valid JSON syntax), so the artifact is GENUINELY signed — but
+    // RFC 8785 §3.2.2.2 requires the canonicalizer to terminate on invalid
+    // Unicode. The verifier must surface that as a structured FAIL, not a crash,
+    // matching strict external JCS verifiers that refuse the escaped form. The
+    // signer cannot produce this via signEnvelope (the signing-side canonicalizer
+    // throws first) — exactly why it is hand-crafted here.
+    const payloadB64 = b64url('{"x":"\\ud800"}');
+    const headerB64 = b64url(JSON.stringify({ alg: "EdDSA", kid: key.kid }));
+    const signature = b64url(
+      edSign(null, Buffer.from(`${headerB64}.${payloadB64}`, "utf8"), key.privateKey),
+    );
+    const result = verifyEvidence({
+      jws: `${headerB64}.${payloadB64}.${signature}`,
+      jwks: buildJwks([key.publicJwk]),
+    });
+    expect(result.ok).toBe(false);
+    // The signature itself is genuine — canonicalization is what refuses it.
+    expect(result.checks.find((check) => check.id === "signature")?.ok).toBe(true);
+    const canonicalCheck = result.checks.find((check) => check.id === "canonical-form");
+    expect(canonicalCheck?.ok).toBe(false);
+    expect(canonicalCheck?.detail).toContain("lone UTF-16 surrogate");
+  });
+
   it("the standalone verifier rejects a validly-SIGNED null payload at the envelope-shape check", () => {
     const key = generateSigningKey();
     // "null" IS its own canonical form, so this sails through the canonical-form

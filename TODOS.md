@@ -21,24 +21,26 @@ the `T-D*` task IDs trace to the private planning records.
 ## W2 — backend completion
 All W2 deliverables shipped in **v0.2.0.0 (2026-06-09)** — see Completed.
 
-### Deferred hardening (from the v0.2.0.0 cross-vendor review)
-- [ ] Verifier-side strict envelope schema in `verifier/verify.mjs` — reject unknown fields and
-      enforce types/formats (`envelope_version`, `reason_codes`/`matched_rules` array shapes,
-      `rule_pack_hash` + timestamp formats), not just required-field presence. A signed-but-malformed
-      envelope is only producible by the key holder, so this is robustness, not an outsider-reachable
-      hole. **Priority:** P2
-- [ ] `scripts/replay.ts` exit-code semantics — replay decodes the payload and re-evaluates WITHOUT
-      checking authenticity (by design, and loudly labelled). Consider a distinct non-zero status
-      (or requiring `--jwks` + a verify pass) so automation consuming only the exit code cannot
-      confuse "payload re-derived" with "valid evidence re-derived." **Priority:** P3
-- [ ] RFC 8785 lone-surrogate handling — both canonicalizers (`src/crypto/canonicalize.ts` and
-      `verifier/verify.mjs`) serialize strings via `JSON.stringify`, which ESCAPES lone surrogates
-      (ES2019 well-formed stringify) rather than rejecting them. Verify whether strict RFC 8785
-      requires invalid-Unicode input to FAIL; if so, reject lone surrogates at the canonicalization
-      boundary (or validate intent strings at `/authorize`). Both verifiers AGREE today (not a
-      forgery); the only risk is that a strict external JCS verifier could reject a signed artifact
-      carrying a lone surrogate. Pre-existing (W1 `canonicalize.ts`, unchanged by W2); surfaced by the
-      v0.2.0.0 cross-vendor review — candidate for `/deep-research` on the RFC requirement. **Priority:** P3
+### Deferred hardening (from the v0.2.0.0 cross-vendor review) — all cleared in v0.2.1.0 (2026-06-10)
+- [x] **P2 — Verifier-side strict envelope schema** (`verifier/verify.mjs`): the envelope-shape check
+      now enforces the EXACT v0.1 schema — precise field set (unknown fields rejected),
+      `envelope_version` pinned to `0.1.0`, and every field's type + format (sha256-hex hashes, semver,
+      `ev-<uuid>` id, `Date.toISOString` timestamp, `reason_codes`/`matched_rules`/`scholar_signature_ref`
+      shapes) — not just required-field presence. `POST /verify` inherits it via the shared
+      `verifyEvidence`. Done **v0.2.1.0**; `test/verifier/envelope-schema.test.ts`.
+- [x] **P3 — `scripts/replay.ts` exit-code semantics**: added an optional `--jwks` combined verdict
+      (`npm run replay:verified`). Bare replay is unchanged (exit 0 = reproduced, loudly labelled
+      "authenticity NOT checked"); with `--jwks`, exit 0 requires reproduced AND authentic (exit 1 if
+      either fails). The default path still never checks the signature, so the two-tools/two-properties
+      invariant holds. Done **v0.2.1.0**.
+- [x] **P3 — RFC 8785 lone-surrogate handling**: `/deep-research` resolved the open RFC question —
+      §3.2.2.2 NORMATIVELY requires terminating on invalid Unicode (a BCP-14 MUST whose stated rationale
+      is "broken signatures"), and implementations DIVERGE (the RFC author's JS ref escapes, Java passes
+      through, Go ref + strict verifiers reject), so escaping is a real interop hazard, not just a
+      theoretical one. Both canonicalizers (`src/crypto/canonicalize.ts` + `verifier/verify.mjs`) now
+      REJECT lone surrogates instead of ES2019-escaping them; `/authorize` maps the failure to 400
+      problem+json (error ≠ deny). Property-tested to agree, including on rejection. Done **v0.2.1.0**
+      (citation trail in `CHANGELOG.md`).
 
 ## W3-4 — web surfaces (build to DESIGN.md + design/ mockups)
 - [ ] T-D1 evidence viewer (match `design/evidence-viewer-chosen.html`)

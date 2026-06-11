@@ -3,6 +3,86 @@
 All notable changes to this project are documented in this file.
 Versions follow a 4-digit MAJOR.MINOR.PATCH.MICRO scheme; dates are YYYY-MM-DD.
 
+## [0.2.1.0] - 2026-06-11
+
+Deferred hardening from the v0.2.0.0 cross-vendor review. The three schema/canonicalization
+items are key-holder-only robustness (a signed-but-malformed artifact is only producible by the
+issuer, not an outsider-reachable hole), cleared before the W3 web surfaces so the viewer renders
+against a strict, RFC-defensible verifier contract. A pre-merge cross-model review of this work
+then surfaced a parity gap on the offline replay CLI (operator-facing, not key-holder-only): it
+did not enforce that same strict schema and mis-typed exit codes on operator errors. The Fixed
+section below closes it so the two verification tools (verify and replay) reject the identical
+malformed artifacts and both keep error ≠ verdict.
+
+### Security
+
+- Strict evidence-envelope schema in the offline verifier (`verifier/verify.mjs`): the
+  envelope-shape check now enforces the EXACT v0.1 schema — the precise field set (unknown
+  fields are rejected), `envelope_version` pinned to `0.1.0`, and every field's type and format
+  (sha256-hex hashes, semver versions, `ev-<uuid>` decision id, `Date.toISOString` timestamp,
+  `reason_codes`/`matched_rules` array shapes, the UNCERTIFIED `scholar_signature_ref` shape) —
+  not merely required-field presence. `POST /verify` inherits it (it reuses the same
+  `verifyEvidence`), so the served and offline verdicts stay identical.
+- RFC 8785 §3.2.2.2 lone-surrogate rejection on BOTH canonicalizers
+  (`src/crypto/canonicalize.ts` and `verifier/verify.mjs`): invalid Unicode (an unpaired UTF-16
+  surrogate) now terminates canonicalization with an error instead of being silently escaped as
+  `\udXXX` by ES2019 well-formed `JSON.stringify`. That escaping is a non-compliant code path
+  the RFC's own rationale flags ("interoperability issues including broken signatures") and that
+  the RFC author's Go reference and strict verifiers (`gowebpki/jcs`, `json-canon`) reject — so
+  an escaped-surrogate artifact would have failed to verify elsewhere. At `POST /authorize` an
+  intent carrying a lone surrogate is now a 400 problem+json (malformed request), never a signed
+  envelope (error ≠ deny). The two canonicalizers are property-tested to agree on every input,
+  including which inputs they reject.
+
+### Added
+
+- `scripts/replay.ts` optional `--jwks` combined verdict (and `npm run replay:verified`). By
+  default replay stays reproducibility-only and exit 0 is loudly labelled "authenticity NOT
+  checked"; with `--jwks` it also runs the independent verifier and requires reproduced AND
+  authentic for exit 0 (exit 1 if either fails). This closes a conflation where automation
+  reading only the exit code could mistake a bare "decision re-derived" for "valid evidence,"
+  while preserving the two-tools/two-properties separation — the default path still never touches
+  the signature. In `--jwks` mode authenticity is settled BEFORE the pack-mismatch operator-error
+  path: a FORGED artifact (e.g. a tampered `rule_pack_hash`, which breaks the signature) is an
+  authenticity FAIL (exit 1), never misreported as an exit-2 "supply the cited pack" operator
+  error; an authentic artifact for which the operator supplied the wrong `--pack` still exits 2.
+  A non-canonicalizable (lone-surrogate) envelope is rejected as a malformed artifact on every
+  branch, including the D12 evaluator-mismatch path — as an operator error (exit 2) in bare mode,
+  and as the verifier's authenticity-FAIL verdict (exit 1) with `--jwks` (see Fixed below).
+
+### Fixed
+
+- The offline replay CLI (`scripts/replay.ts`) now enforces the strict v0.1 envelope schema
+  before re-evaluation, reusing the verifier's own `validateEnvelopeShape` (the exact check
+  `POST /verify` runs) as the single source of truth — so the two verification tools reject the
+  identical malformed artifacts. Bare replay previously had NO schema gate: a structurally-valid
+  envelope missing a required field could crash the tool with an uncaught canonicalization error
+  (Node exit 1, the verdict code) or, worse, emit a false `REPRODUCED` (exit 0) to automation
+  reading only the exit code. Both are now a clean operator error (exit 2, "nothing was
+  replayed"). A defensive guard also wraps the re-evaluation so a canonicalization failure can
+  never resurface as an uncaught exit-1 stack — mirroring the verifier's "a crash is never a
+  verdict" discipline.
+- Bad CLI usage — an unknown flag, a stray positional, or a value-option given with no value —
+  now exits 2 (operator error) in BOTH `scripts/replay.ts` and `verifier/verify.mjs`. Previously
+  `parseArgs` threw before the input guard, so Node exited 1 (the "not valid evidence / not
+  reproduced" verdict code) on a mere typo, which automation chaining the tools would misread.
+- `scripts/replay.ts` now rejects a non-canonical base64url JWS segment (e.g. one carrying `=`
+  padding) as malformed input (exit 2), matching the offline verifier; bare replay previously
+  accepted the lenient encoding and could report `REPRODUCED` for a non-compact JWS.
+- In `--jwks` mode a MALFORMED evidence artifact — bad JWS structure, a non-canonical (padded)
+  base64url segment, a non-JSON-object payload, or an envelope failing the canonicalizability
+  or strict-schema gate — is now classified by the verifier's verdict (authenticity FAIL,
+  exit 1) instead of an exit-2 operator error, matching what `verify.mjs` says about the same
+  bytes (structure, encoding, signature, canonical form and schema failures are all FAIL
+  verdicts there). Previously the cheapest tampering (appending `=` padding to a segment,
+  adding an unknown field, or breaking `rule_pack_hash`'s hex format) was reported as an
+  operator/input condition, downgrading the forgery signal for exit-code-only automation and
+  bypassing the pack-mismatch disambiguation that exists to name `rule_pack_*` tampering an
+  authenticity FAIL. With `--jwks`, exit 2 is reserved for the operator's own inputs (bad
+  usage, unreadable files, an unparseable pack/JWKS); bare replay (no signature to consult)
+  keeps exit 2 for malformed artifacts too — the documented two-tools boundary. (Both rounds
+  surfaced post-/ship by the cross-vendor Codex review on the PR.)
+
 ## [0.2.0.0] - 2026-06-09
 
 ### Added

@@ -28,6 +28,10 @@ out, driven by versioned rule packs. The first pack is an uncertified synthetic 
 - **Synthetic data only** — no PII, no real card/customer data.
 - Minimal dependencies; agentic-coded HTML/CSS for the web surfaces (no bespoke design pipeline).
 - Crypto / canonicalization is the crown-jewel surface: property-based + negative-alg tests are mandatory.
+- **Always squash-merge PRs.** The repo enforces squash-only (merge-commit and rebase disabled; branches
+  auto-delete on merge), so `main` stays linear: one commit per PR. Merge with
+  `gh pr merge <n> --squash --delete-branch`. (Standardized 2026-06-10 after W1 landed as a merge commit
+  and W2 as a squash; dependabot PRs follow the same rule.)
 
 ## Build sequence
 W1 crypto/API core (the CI gate) → W2 backend → W3-4 web surfaces (to `DESIGN.md` + `design/`).

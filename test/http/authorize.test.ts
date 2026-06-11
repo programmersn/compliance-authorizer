@@ -159,6 +159,33 @@ describe("integration failures are problem+json and NEVER signed (error ≠ deny
     expect(body).not.toHaveProperty("evidence_artifact");
   });
 
+  it("intent string with a lone UTF-16 surrogate → 400 problem+json, NO envelope (RFC 8785 §3.2.2.2)", async () => {
+    // A lone surrogate is syntactically valid JSON and satisfies Type.String(),
+    // so it clears AJV — but it cannot be canonicalized (RFC 8785 §3.2.2.2). That
+    // is a malformed request (400), never a decision: error ≠ deny holds. (inject
+    // serializes the payload via JSON.stringify, which escapes the surrogate to
+    // \ud800; the server's parser re-materializes the lone surrogate on the way in.)
+    const response = await app.inject({
+      method: "POST",
+      url: "/authorize",
+      payload: {
+        ...validIntent,
+        merchant: {
+          ...validIntent.merchant,
+          name: `casino${String.fromCharCode(0xd800)}hotel`,
+        },
+      },
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.headers["content-type"]).toContain(PROBLEM_CONTENT_TYPE);
+    const body = response.json<Record<string, unknown>>();
+    expect(body["status"]).toBe(400);
+    expect(body["title"]).toContain("invalid Unicode");
+    expect(body).not.toHaveProperty("evidence_artifact");
+    expect(body).not.toHaveProperty("decision");
+    expect(body["detail"]).toContain("no evidence envelope");
+  });
+
   it("unknown profile → 422 problem+json listing available profiles, NO envelope", async () => {
     const response = await app.inject({
       method: "POST",
