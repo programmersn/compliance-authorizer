@@ -133,9 +133,11 @@ the result to the envelope's `decision` / `reason_codes` / `matched_rules`.
 not reproduce — the tampered-then-re-signed case above — or pin an
 `evaluator_version` this engine does not run, `D12`, in which case replay could
 not be *attempted* and the verdict is "unknown", not "mismatch"); **exit `2` =
-operator/input error** (bad usage, unreadable/unparseable input, or an envelope
-that fails the strict v0.1 schema — replay enforces the **same** schema gate the
-verifier runs, so both tools reject the identical malformed artifacts).
+operator/input error** (bad usage, unreadable/unparseable input, or — in this
+bare mode — an envelope that fails the strict v0.1 schema; replay enforces the
+**same** schema gate the verifier runs, so both tools reject the identical
+malformed artifacts, and with `--jwks` the malformed case is escalated to the
+verifier's exit-`1` verdict, below).
 
 #### Optional: fold authenticity into one verdict with `--jwks`
 
@@ -154,10 +156,17 @@ node --experimental-strip-types --no-warnings scripts/replay.ts \
 
 With `--jwks`, **exit `0` = REPRODUCED *and* AUTHENTIC**; **exit `1`** if either
 the decision did not reproduce **or** the artifact is not authentic; **exit `2`**
-for an operator/input error. The two verdicts are still reported separately in
-the output — `--jwks` is an explicit opt-in, and the default path still never
-touches the signature (the standalone verifier remains the independent
-authenticity tool; replay just calls it for you when asked).
+for an operator/input error. A **malformed** envelope (one failing the
+canonicalizability or strict-schema gate) is exit `1` here, **not** exit `2`: in
+combined mode the verifier's verdict wins, and `verify.mjs` classifies those
+same bytes as not-valid-evidence — signature first, so forged-then-malformed
+tampering is named an authenticity FAIL rather than softened to an operator
+error an exit-code-only consumer would ignore. Only bare replay, having no
+signature to consult, reads a malformed envelope as exit `2`. The two verdicts
+are still reported separately in the output — `--jwks` is an explicit opt-in,
+and the default path still never touches the signature (the standalone verifier
+remains the independent authenticity tool; replay just calls it for you when
+asked).
 
 Because the same intent + same `rule_pack_hash` + same `evaluator_version`
 always yields the same decision, anyone with these public inputs reaches the

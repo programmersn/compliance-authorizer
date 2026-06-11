@@ -505,14 +505,15 @@ describe("replay --jwks combined verdict (opt-in authenticity)", () => {
     expect(out).not.toContain("RESULT:"); // never a silent reproducibility verdict
   });
 
-  it("a lone surrogate + --jwks → exit 2 (malformed wins over authenticity), never an exit-1 AUTHENTICITY FAIL", () => {
-    // PRECEDENCE pin — the --jwks branch of "rejected uniformly on every branch."
-    // A lone surrogate ALSO breaks the signature, so without the up-front guard
-    // this artifact would reach the --jwks disambiguation and read as an
-    // authenticity FAIL (exit 1). But a non-canonicalizable envelope is malformed
-    // INPUT: it cannot be meaningfully verified OR replayed, so the malformed guard
-    // runs FIRST and wins uniformly (exit 2) and the authenticity leg never runs.
-    // This holds the documented ordering even when --jwks is supplied.
+  it("a lone surrogate + --jwks → AUTHENTICITY FAIL (exit 1), never a soft exit-2 operator error", () => {
+    // CONTRACT pin (Codex P2, PR #6): in combined mode the VERIFIER's verdict
+    // wins on a malformed artifact. verify.mjs classifies these same bytes as
+    // FAIL (exit 1) — signature first, then canonical form — so replay --jwks
+    // must agree, or the two tools would emit opposite exit codes for one
+    // artifact. An exit-2 "operator error" reading would let a forger silence
+    // exit-code automation that pages on exit 1 by simply malforming the
+    // payload. Bare-mode behavior (exit 2) is pinned separately above — the
+    // documented two-tools boundary.
     const [header, payloadB64, signature] = readFileSync(evidencePath, "utf8")
       .trim()
       .split(".") as [string, string, string];
@@ -542,17 +543,19 @@ describe("replay --jwks combined verdict (opt-in authenticity)", () => {
       { encoding: "utf8" },
     );
     const out = result.stdout + result.stderr;
-    expect(result.status).toBe(2); // malformed wins uniformly — even with --jwks supplied
-    expect(out).toContain("INPUT ERROR");
+    expect(result.status).toBe(1); // the verifier's verdict — not an operator error
+    expect(out).toContain("MALFORMED ARTIFACT");
     expect(out).toContain("invalid Unicode");
-    expect(out).not.toContain("AUTHENTICITY"); // the authenticity leg never ran
-    expect(result.status).not.toBe(1); // NOT misread as an authenticity verdict
+    expect(out).toContain("AUTHENTICITY (--jwks): FAIL");
+    expect(out).not.toContain("INPUT ERROR"); // exit 2 wording must not appear
+    expect(out).not.toContain("RESULT:"); // replay itself still never ran
   });
 
-  it("a malformed envelope MISSING a required field + --jwks → exit 2 (strict-shape guard), BEFORE the authenticity leg", () => {
-    // The strict-shape guard runs before the --jwks authenticity disambiguation, so a
-    // missing-field artifact is a malformed operator error (exit 2) — never reaching,
-    // and never reported as, an authenticity verdict.
+  it("a malformed envelope MISSING a required field + --jwks → AUTHENTICITY FAIL (exit 1), not an exit-2 shape error", () => {
+    // CONTRACT pin (Codex P2, PR #6): the strict-shape guard is mode-aware. With
+    // --jwks the artifact gets the verifier's not-valid-evidence verdict (exit 1,
+    // here via the broken signature — tampering removed a signed field); only bare
+    // replay reads a malformed envelope as an exit-2 operator error.
     const [header, payloadB64, signature] = readFileSync(evidencePath, "utf8")
       .trim()
       .split(".") as [string, string, string];
@@ -579,8 +582,51 @@ describe("replay --jwks combined verdict (opt-in authenticity)", () => {
       { encoding: "utf8" },
     );
     const out = result.stdout + result.stderr;
-    expect(result.status).toBe(2);
+    expect(result.status).toBe(1);
+    expect(out).toContain("MALFORMED ARTIFACT");
     expect(out).toContain("v0.1 schema");
-    expect(out).not.toContain("AUTHENTICITY"); // shape guard precedes the authenticity leg
+    expect(out).toContain("AUTHENTICITY (--jwks): FAIL");
+    expect(out).not.toContain("INPUT ERROR");
+  });
+
+  it("FORGED non-hex rule_pack_hash + --jwks → AUTHENTICITY FAIL (exit 1), NOT an exit-2 'malformed artifact'", () => {
+    // The exact Codex-P2 bypass case: tampering rule_pack_hash into a non-hex
+    // string makes the envelope BOTH malformed (fails the v0.1 schema's
+    // sha256-hex format) and inauthentic (the bytes no longer match the
+    // signature). An exit-2 "malformed" reading would swallow the forgery
+    // signal AND skip the pack-mismatch disambiguation that exists precisely
+    // to name rule_pack_* tampering an authenticity FAIL. The signature is
+    // what tells forgery from operator error, so --jwks consults it first.
+    const [header, payloadB64, signature] = readFileSync(evidencePath, "utf8")
+      .trim()
+      .split(".") as [string, string, string];
+    const envelope = JSON.parse(
+      Buffer.from(payloadB64, "base64url").toString("utf8"),
+    ) as Record<string, unknown>;
+    envelope["rule_pack_hash"] = "not-a-sha256-hex-string"; // forged AND malformed
+    const payload = Buffer.from(JSON.stringify(envelope), "utf8").toString("base64url");
+    const forgedPath = join(workDir, "non-hex-pack-hash-jwks.jws");
+    writeFileSync(forgedPath, `${header}.${payload}.${signature}`, "utf8");
+    const result = spawnSync(
+      process.execPath,
+      [
+        "--experimental-strip-types",
+        "--no-warnings",
+        replayScript,
+        "--evidence",
+        forgedPath,
+        "--pack",
+        genuinePackPath,
+        "--jwks",
+        genuineJwksPath,
+      ],
+      { encoding: "utf8" },
+    );
+    const out = result.stdout + result.stderr;
+    expect(result.status).toBe(1); // forgery signal, not operator error
+    expect(out).toContain("MALFORMED ARTIFACT");
+    expect(out).toContain("AUTHENTICITY (--jwks): FAIL");
+    expect(out).not.toContain("INPUT ERROR");
+    expect(out).not.toContain("supply the cited pack"); // disambiguation not bypassed into exit 2
   });
 });

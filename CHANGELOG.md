@@ -3,7 +3,7 @@
 All notable changes to this project are documented in this file.
 Versions follow a 4-digit MAJOR.MINOR.PATCH.MICRO scheme; dates are YYYY-MM-DD.
 
-## [0.2.1.0] - 2026-06-10
+## [0.2.1.0] - 2026-06-11
 
 Deferred hardening from the v0.2.0.0 cross-vendor review. The three schema/canonicalization
 items are key-holder-only robustness (a signed-but-malformed artifact is only producible by the
@@ -46,8 +46,9 @@ malformed artifacts and both keep error ≠ verdict.
   path: a FORGED artifact (e.g. a tampered `rule_pack_hash`, which breaks the signature) is an
   authenticity FAIL (exit 1), never misreported as an exit-2 "supply the cited pack" operator
   error; an authentic artifact for which the operator supplied the wrong `--pack` still exits 2.
-  A non-canonicalizable (lone-surrogate) envelope is rejected uniformly as a malformed artifact
-  (exit 2) on every branch, including the D12 evaluator-mismatch path.
+  A non-canonicalizable (lone-surrogate) envelope is rejected as a malformed artifact on every
+  branch, including the D12 evaluator-mismatch path — as an operator error (exit 2) in bare mode,
+  and as the verifier's authenticity-FAIL verdict (exit 1) with `--jwks` (see Fixed below).
 
 ### Fixed
 
@@ -68,6 +69,15 @@ malformed artifacts and both keep error ≠ verdict.
 - `scripts/replay.ts` now rejects a non-canonical base64url JWS segment (e.g. one carrying `=`
   padding) as malformed input (exit 2), matching the offline verifier; bare replay previously
   accepted the lenient encoding and could report `REPRODUCED` for a non-compact JWS.
+- In `--jwks` mode a MALFORMED artifact (one failing the canonicalizability or strict-schema
+  gate) is now classified by the verifier's verdict — authenticity FAIL, exit 1 — instead of an
+  exit-2 operator error, matching what `verify.mjs` says about the same bytes (signature first,
+  then canonical form, then schema; all FAIL verdicts there). Previously the cheapest tampering
+  (adding an unknown field, or breaking `rule_pack_hash`'s hex format) was reported as an
+  operator/input condition, downgrading the forgery signal for exit-code-only automation and
+  bypassing the pack-mismatch disambiguation that exists to name `rule_pack_*` tampering an
+  authenticity FAIL. Bare replay (no signature to consult) keeps exit 2 — the documented
+  two-tools boundary. (Surfaced post-/ship by the cross-vendor Codex review on the PR.)
 
 ## [0.2.0.0] - 2026-06-09
 
