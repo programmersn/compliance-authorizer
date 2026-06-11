@@ -2,7 +2,7 @@
 
 Build tasks for the W1-W4 prototype — **build scope only**. Design spec: [`DESIGN.md`](./DESIGN.md).
 Strategy, outreach, and research planning live in the project's private workspace, not here;
-the `T-D*` task IDs trace to the private planning records.
+the `T-D*`/`ET*`/`DT*` task IDs trace to the private planning records.
 
 ## W1 — crypto/API core (the gate; build synchronously)
 - [x] **GATE:** sign → offline-verify round-trip green in CI; property-based + negative-alg
@@ -42,7 +42,9 @@ All W2 deliverables shipped in **v0.2.0.0 (2026-06-09)** — see Completed.
       problem+json (error ≠ deny). Property-tested to agree, including on rejection. Done **v0.2.1.0**
       (citation trail in `CHANGELOG.md`).
 
-## W3-4 — web surfaces (build to DESIGN.md + design/ mockups)
+## W3-4 — web surfaces + backend completion remainder (boil the lake)
+
+### Design surfaces (build to DESIGN.md + design/ mockups)
 - [ ] T-D1 evidence viewer (match `design/evidence-viewer-chosen.html`)
 - [ ] T-D2 playground + all six interaction states (include a REVIEW scenario)
 - [ ] T-D3 landing (match `design/landing-mockup.html`)
@@ -51,6 +53,29 @@ All W2 deliverables shipped in **v0.2.0.0 (2026-06-09)** — see Completed.
 - [ ] T-D6 print stylesheet + a11y baseline
 - [ ] T-D7 3-min demo-video storyboard
 - [ ] T-D8 copy-guard pass (honesty wording; generic public labels)
+
+### Eng-plan parity (restored 2026-06-11 — these were W3-4-tagged in the eng plan but fell out
+of this checklist when W2 closed; no descope was ever decided)
+- [ ] ET16 + ET17 minimal agent-credential verification + two-layer enforcement: verify a
+      presented synthetic signed credential (did:key), enforce its encoded MCC scope ∩ the rule
+      pack (most-restrictive wins); tampered/invalid credential → 4xx problem+json, NEVER a
+      signed deny (error ≠ deny). Tests: valid-scope allow, forbidden-scope deny, tampered-sig
+      reject, two-layer intersection. **Priority:** P1 (test-plan critical path #4)
+- [ ] ET14 remainder — `node:sqlite` evidence store (better-sqlite3 fallback): the W2 routes
+      shipped stateless; the persistence leg never landed. **Priority:** P2
+- [ ] ET18 AGT mapping doc (`docs/agt-mapping.md`) + one example governance YAML; validate
+      against the AGT engine OR word it "schema-mapped, not engine-verified". **Priority:** P2
+- [ ] ET20 scholar-attestation path: did:key detached JWS over `rule_pack_hash` + named-scholar
+      metadata shape; v0.1 ships an "UNCERTIFIED specimen", never a bare null. **Priority:** P3
+
+### DevEx docs not yet shipped
+- [ ] DT1 `docs/machine-contract.md` — the always-200 machine contract: a deny is HTTP 200 (read
+      `body.decision`); deny = halt-no-retry, review = halt-escalate; 4xx = integration failure,
+      never a signed decision. **Priority:** P2
+- [ ] DT2 `docs/reason-codes.md` — closed reason-code reference + actionable problem+json
+      (offending field + allowed values). **Priority:** P2
+- [ ] DT8 `llms.txt` + `AGENTS.md` — agent-facing doc: reading a deny + reason_codes + halting;
+      references the machine contract. **Priority:** P3
 
 ## Guards (every task)
 Synthetic data only · no LLM in the decision path · error ≠ deny · UNCERTIFIED unavoidable +
