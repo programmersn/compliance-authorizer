@@ -37,9 +37,10 @@ property-based, canonicalization invariance) are in.
 historical verifying keys (RFC 7517) so any envelope stays offline-verifiable across key
 rotation. `GET /rule-packs/:id/:version` serves the exact canonical pack bytes a decision
 was made against (sha256 of the response body equals the envelope's `rule_pack_hash`).
-`POST /verify` accepts any evidence artifact and returns a verification verdict — always
-HTTP 200 (`valid:false` is a verdict, not a 4xx; error ≠ deny on the verification path
-too). Decision replay (`scripts/replay.ts`) re-derives the decision from the cited intent
+`POST /verify` accepts any evidence artifact and always returns HTTP 200 with two distinct
+verdict fields: `valid` (was this artifact signed by the issuer's key, intact and
+canonical?) and `reproducibility` (does the cited decision re-derive against the cited
+pack?). `valid:false` is a verdict, not a 4xx; error ≠ deny on the verification path too. Decision replay (`scripts/replay.ts`) re-derives the decision from the cited intent
 and pack; `--jwks` adds an authenticity gate so a single exit code covers both properties.
 The verifier enforces the EXACT v0.1 envelope schema and rejects RFC 8785 lone surrogates
 on both canonicalizers. `npm test` covers 218 tests across 14 test files. See
@@ -49,6 +50,13 @@ on both canonicalizers. `npm test` covers 218 tests across 14 test files. See
 The web surfaces (W3-4: playground, evidence viewer) are not built yet. The locked design
 layer is in [`DESIGN.md`](./DESIGN.md) and the build tasks are in [`TODOS.md`](./TODOS.md).
 Read `DESIGN.md` before building.
+
+## Configuration
+
+| Variable | Default | Description |
+|---|---|---|
+| `PORT` | `3000` | HTTP port the service listens on. Must be an integer in `[1, 65535]`. |
+| `KEYS_DIR` | `.keys/` | Directory where the Ed25519 signing key is stored (gitignored). Created and populated automatically on first boot. |
 
 ## License
 
