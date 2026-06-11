@@ -21,7 +21,7 @@ the `T-D*` task IDs trace to the private planning records.
 ## W2 — backend completion
 All W2 deliverables shipped in **v0.2.0.0 (2026-06-09)** — see Completed.
 
-### Deferred hardening (from the v0.2.0.0 cross-vendor review) — all cleared in v0.2.1.0 (2026-06-10)
+### Deferred hardening (from the v0.2.0.0 cross-vendor review) — all cleared in v0.2.1.0 (2026-06-11)
 - [x] **P2 — Verifier-side strict envelope schema** (`verifier/verify.mjs`): the envelope-shape check
       now enforces the EXACT v0.1 schema — precise field set (unknown fields rejected),
       `envelope_version` pinned to `0.1.0`, and every field's type + format (sha256-hex hashes, semver,
