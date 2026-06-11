@@ -266,6 +266,21 @@ describe("verifier input errors are operator errors, never verification verdicts
     expect(stdout).toContain("usage:");
     expect(stdout).not.toContain("RESULT:");
   });
+
+  it("exits 2 (not 1) on an unknown flag — parseArgs throws, but bad usage is an operator error", () => {
+    // parseArgs (strict mode) THROWS on an unknown flag / stray positional / a
+    // value-option with no value. That throw sits before the read/parse try/catch,
+    // so without its own guard Node exits 1 — the "NOT valid evidence" VERDICT code
+    // — for a mere typo, which automation chaining the verifier would misread.
+    const { status, stdout } = runVerifier([
+      "--evidence", evidencePath,
+      "--jwks", jwksPath,
+      "--bogus-flag",
+    ]);
+    expect(status).toBe(2);
+    expect(stdout).toContain("INPUT ERROR");
+    expect(stdout).not.toContain("RESULT:");
+  });
 });
 
 describe("verifier independence (zero-trust property is structural, not aspirational)", () => {

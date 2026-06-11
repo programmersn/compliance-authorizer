@@ -42,10 +42,14 @@
  */
 import { readFileSync } from "node:fs";
 import { parseArgs } from "node:util";
-import { CanonicalizationError } from "../src/crypto/canonicalize.ts";
+import { canonicalize, CanonicalizationError } from "../src/crypto/canonicalize.ts";
 import { replayEnvelope } from "../src/evidence/replay.ts";
 import { loadRulePack } from "../src/rules/loader.ts";
-import { verifyEvidence } from "../verifier/verify.mjs";
+import {
+  isCanonicalB64url,
+  validateEnvelopeShape,
+  verifyEvidence,
+} from "../verifier/verify.mjs";
 
 const UNCERTIFIED_NOTE =
   "UNCERTIFIED — synthetic demo rule pack; not a fatwa / not certified / not production advice.";
@@ -58,14 +62,40 @@ function inputError(message: string): never {
   process.exit(2);
 }
 
+/**
+ * Print the authenticity-FAIL verdict (header + the first failing check). Shared
+ * by the two --jwks legs — the pack-mismatch disambiguation and the final
+ * authenticity leg — so the FAIL wording and the first-failing-check format have
+ * a single definition and cannot drift between the two call sites.
+ */
+function printAuthenticityFail(auth: ReturnType<typeof verifyEvidence>): void {
+  console.log("AUTHENTICITY (--jwks): FAIL — this artifact is NOT valid evidence.");
+  const firstFail = auth.checks.find((check) => !check.ok);
+  if (firstFail !== undefined) {
+    console.log(`  first failing check: ${firstFail.title} — ${firstFail.detail}`);
+  }
+}
+
 function main(): void {
-  const { values } = parseArgs({
-    options: {
-      evidence: { type: "string" },
-      pack: { type: "string" },
-      jwks: { type: "string" },
-    },
-  });
+  // parseArgs throws on an unknown flag / stray positional / a value-option given
+  // with no value. Bad usage is an OPERATOR error (exit 2), never an uncaught throw
+  // that Node exits 1 on — exit 1 is a verdict, and a typo'd flag is not one.
+  let values;
+  try {
+    values = parseArgs({
+      options: {
+        evidence: { type: "string" },
+        pack: { type: "string" },
+        jwks: { type: "string" },
+      },
+    }).values;
+  } catch (error) {
+    inputError(
+      `${error instanceof Error ? error.message : String(error)} — usage: ` +
+        "node --experimental-strip-types scripts/replay.ts --evidence <evidence.jws> " +
+        "--pack <pack.json> [--jwks <jwks.json>]",
+    );
+  }
   if (!values.evidence || !values.pack) {
     console.error(
       "usage: node --experimental-strip-types scripts/replay.ts " +
@@ -85,6 +115,17 @@ function main(): void {
     const parts = jws.split(".");
     if (parts.length !== 3 || parts.some((segment) => segment.length === 0)) {
       inputError("evidence is not a 3-segment JWS-compact artifact");
+    }
+    // RFC 7515 segments are canonical, UNPADDED base64url. Node's decoder is
+    // lenient (it ignores `=` padding and a final char's don't-care bits), so many
+    // distinct strings decode to the same bytes. A non-canonical encoding is a
+    // malformed artifact (the strict verifier rejects it too via isCanonicalB64url);
+    // reject it here as an operator error so bare replay can never read a
+    // non-compact JWS as "reproduced."
+    if (!parts.every((segment) => isCanonicalB64url(segment))) {
+      inputError(
+        "evidence is not canonical base64url (RFC 7515) — the artifact is malformed",
+      );
     }
     const payloadB64 = parts[1] as string;
     const decoded: unknown = JSON.parse(
@@ -131,13 +172,84 @@ function main(): void {
   }
   console.log("");
 
+  // Malformed-artifact guard #1 — CANONICALIZABILITY (BOTH modes). A
+  // non-canonicalizable envelope (e.g. one carrying a lone UTF-16 surrogate, which
+  // RFC 8785 §3.2.2.2 requires terminating on, or one nested past the depth bound)
+  // can never be valid evidence and cannot be replayed. Surface it as a clean
+  // operator error (exit 2, "nothing was replayed"), UNIFORMLY and BEFORE the shape
+  // / pack / authenticity branches below. Canonicalizing the WHOLE envelope here
+  // catches a lone surrogate in ANY field (payment_intent included), even one the
+  // strict schema below treats as opaque, and on every branch (replayEnvelope's D12
+  // early return would otherwise skip the check). Never an uncaught crash; the
+  // message names the actual cause rather than assuming a surrogate.
+  try {
+    canonicalize(envelope);
+  } catch (error) {
+    if (error instanceof CanonicalizationError) {
+      inputError(
+        "the evidence envelope cannot be canonicalized per RFC 8785, so it is a " +
+          `malformed artifact that cannot be replayed: ${error.message}`,
+      );
+    }
+    throw error;
+  }
+
+  // Malformed-artifact guard #2 — STRICT v0.1 ENVELOPE SHAPE (BOTH modes). Bare
+  // replay does NOT run the signature/authenticity path, so without this it has no
+  // schema gate at all: a structurally-valid-JSON envelope missing required fields
+  // (or with mistyped ones) slips through to replayEnvelope and either crashes on
+  // canonicalize(undefined) or emits a FALSE "REPRODUCED" (exit 0) to exit-code-only
+  // automation. validateEnvelopeShape is the verifier's OWN strict schema (the exact
+  // check POST /verify enforces), reused here as the single source of truth so the
+  // two verification tools reject the SAME malformed artifacts — a malformed envelope
+  // can be neither authenticated NOR replayed → operator error (exit 2). A genuine
+  // D12 (foreign-evaluator) artifact still PASSES this gate: the schema pins
+  // envelope_version to "0.1.0" but checks evaluator_version by semver FORMAT only,
+  // so it reaches the D12 "could not be attempted" verdict below.
+  const shapeError = validateEnvelopeShape(envelope);
+  if (shapeError !== null) {
+    inputError(
+      `the evidence envelope does not conform to the v0.1 schema (${shapeError}) — ` +
+        "the artifact is malformed",
+    );
+  }
+
   // The cited pack must actually BE the pack the envelope references — id +
   // version AND content hash. id/version do NOT pin pack CONTENT: rule_pack_hash
   // exists precisely because two packs can share an id/version yet differ
-  // byte-for-byte. A disagreement on either is the operator handing the wrong
-  // pack — an input error, not a verdict (mirrors the /verify route's
-  // `cited.hash === rule_pack_hash` guard), so the wrong pack is always exit 2,
-  // never a reproducibility verdict against bytes the envelope never cited.
+  // byte-for-byte. A disagreement on either is normally the operator handing the
+  // wrong pack — an input error (exit 2), not a verdict (mirrors the /verify
+  // route's `cited.hash === rule_pack_hash` guard), never a reproducibility
+  // verdict against bytes the envelope never cited.
+  const packMismatch =
+    pack.pack.id !== envelope["rule_pack_id"] ||
+    pack.pack.version !== envelope["rule_pack_version"] ||
+    pack.hash !== String(envelope["rule_pack_hash"]);
+
+  // --jwks DISAMBIGUATION (the load-bearing fix). The cited rule_pack_* read
+  // above are UNAUTHENTICATED, so a mismatch has TWO causes: (1) an AUTHENTIC
+  // artifact whose operator simply supplied the wrong --pack (a real operator
+  // error → exit 2 below); or (2) a FORGED artifact whose rule_pack_* were
+  // tampered — which breaks the signature — and is an authenticity FAIL (exit 1),
+  // NOT "supply the cited pack". Letting the exit-2 path win for case (2) would
+  // misreport forged evidence as an operator/input condition (and send the
+  // operator hunting for a "cited pack" that never existed). In --jwks mode the
+  // signature is exactly what tells the two apart, so consult it BEFORE the exit-2
+  // path: pure (no-pack) authenticity does not depend on the operator's --pack, so
+  // an inauthentic artifact exits 1 here and an authentic one falls through to the
+  // genuine wrong-pack operator error. Bare replay has no signature to consult and
+  // keeps the operator-error reading (exit 2) — the documented two-tools boundary.
+  if (jwks !== undefined && packMismatch) {
+    const auth = verifyEvidence({ jws, jwks });
+    if (!auth.ok) {
+      printAuthenticityFail(auth);
+      console.log("");
+      console.log(`  ${UNCERTIFIED_NOTE}`);
+      process.exit(1);
+    }
+    // Authentic bytes: the cited rule_pack_* are signed (genuine), so the operator
+    // really did supply the wrong pack — fall through to the exit-2 checks.
+  }
   if (
     pack.pack.id !== envelope["rule_pack_id"] ||
     pack.pack.version !== envelope["rule_pack_version"]
@@ -156,21 +268,21 @@ function main(): void {
   }
 
   // --- Reproducibility leg (always run) ---
-  // replayEnvelope canonicalizes the envelope's reason_codes / matched_rules to
-  // compare them, and RFC 8785 §3.2.2.2 now makes canonicalize() THROW on invalid
-  // Unicode (a lone surrogate). A malformed envelope must surface as a clean
-  // operator error (exit 2, "nothing was replayed"), never an uncaught crash —
-  // the same never-crash discipline verify.mjs enforces at its canonical-form
-  // step. Bare replay does not authenticate, so such an envelope can reach here
-  // even with a spoofed (pack-matching) rule_pack_hash.
+  // The malformed-artifact guards above (canonicalizability + strict v0.1 shape)
+  // already reject a lone surrogate and any missing/mistyped field, so
+  // replayEnvelope's own canonicalization of reason_codes / matched_rules should
+  // not throw here. This try/catch is defensive belt-and-suspenders: the house rule
+  // is that a crash is NEVER a verdict, so any CanonicalizationError that somehow
+  // reaches this seam is surfaced as a clean operator error (exit 2), never an
+  // uncaught exit-1 stack trace — mirroring verify.mjs's VERIFIER-ERROR wrap.
   let r: ReturnType<typeof replayEnvelope>;
   try {
     r = replayEnvelope(envelope, pack.pack);
   } catch (error) {
     if (error instanceof CanonicalizationError) {
       inputError(
-        "the evidence envelope contains invalid Unicode (a lone UTF-16 surrogate) " +
-          "that cannot be canonicalized per RFC 8785 §3.2.2.2 — the artifact is malformed",
+        "the evidence envelope cannot be canonicalized per RFC 8785, so it is a " +
+          `malformed artifact that cannot be replayed: ${error.message}`,
       );
     }
     throw error;
@@ -215,11 +327,7 @@ function main(): void {
     if (authentic) {
       console.log("AUTHENTICITY (--jwks): PASS — signature, canonical form and hashes verify.");
     } else {
-      console.log("AUTHENTICITY (--jwks): FAIL — this artifact is NOT valid evidence.");
-      const firstFail = auth.checks.find((check) => !check.ok);
-      if (firstFail !== undefined) {
-        console.log(`  first failing check: ${firstFail.title} — ${firstFail.detail}`);
-      }
+      printAuthenticityFail(auth);
     }
   }
 

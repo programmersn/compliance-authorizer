@@ -113,7 +113,7 @@ const b64urlDecode = (/** @type {string} */ text) => Buffer.from(text, "base64ur
 // segment to round-trip exactly: decode, then re-encode, must reproduce the input.
 // (The payload is independently pinned by the canonical-form check and the header
 // by the signature; this brings the signature segment up to the same standard.)
-const isCanonicalB64url = (/** @type {string} */ text) =>
+export const isCanonicalB64url = (/** @type {string} */ text) =>
   Buffer.from(text, "base64url").toString("base64url") === text;
 
 // did:key encoding of the VERIFYING key (multicodec ed25519-pub 0xed01,
@@ -308,6 +308,34 @@ function validateEnvelopeStrict(envelope) {
 }
 
 /**
+ * Complete v0.1 envelope-shape validation, returning a precise failure reason or
+ * null. Bundles, in order, the three gates verifyEvidence applies: payload is a
+ * JSON object, the EXACT required field set is present, `decision` is one of
+ * allow/review/deny, and every field's type/format conforms
+ * (validateEnvelopeStrict). Shape only — cross-field consistency (intent_hash,
+ * rule_pack_hash, the replayed decision) is the job of the later checks.
+ *
+ * EXPORTED so the offline replay CLI (scripts/replay.ts) gates on the SAME single
+ * source of truth: a malformed envelope can be neither authenticated NOR replayed,
+ * so both verification tools must reject the identical artifacts. Pure, node-only.
+ *
+ * @param {unknown} envelope
+ * @returns {string | null}
+ */
+export function validateEnvelopeShape(envelope) {
+  if (envelope === null || typeof envelope !== "object" || Array.isArray(envelope)) {
+    return "payload is not a JSON object";
+  }
+  const obj = /** @type {Record<string, unknown>} */ (envelope);
+  const missing = ENVELOPE_FIELDS.filter((field) => !(field in obj));
+  if (missing.length > 0) return `missing fields: ${missing.join(", ")}`;
+  if (!DECISIONS.has(obj.decision)) {
+    return `decision ${JSON.stringify(obj.decision)} is not one of allow/review/deny`;
+  }
+  return validateEnvelopeStrict(obj);
+}
+
+/**
  * Verify a JWS-compact evidence artifact against a JWKS (and optionally the
  * rule pack it cites). Pure function over the provided documents — no I/O.
  *
@@ -454,19 +482,10 @@ export function verifyEvidence({ jws, jwks, pack }) {
   pass("canonical-form", "Payload is canonical JSON (RFC 8785)", "payload bytes equal their canonical re-serialization");
 
   // 6. Envelope shape — the EXACT v0.1 schema, not just required-field presence.
-  if (envelope === null || typeof envelope !== "object" || Array.isArray(envelope)) {
-    return fail("envelope-shape", "Evidence envelope shape", "payload is not a JSON object");
-  }
-  const missing = ENVELOPE_FIELDS.filter((field) => !(field in envelope));
-  if (missing.length > 0) {
-    return fail("envelope-shape", "Evidence envelope shape", `missing fields: ${missing.join(", ")}`);
-  }
-  if (!DECISIONS.has(envelope.decision)) {
-    return fail("envelope-shape", "Evidence envelope shape",
-      `decision ${JSON.stringify(envelope.decision)} is not one of allow/review/deny`);
-  }
-  // Strict pass: exact field set (no unknown fields) + every field's type/format.
-  const schemaError = validateEnvelopeStrict(envelope);
+  // validateEnvelopeShape is the single source of truth: the offline replay CLI
+  // (scripts/replay.ts) gates on the identical check, so the two verification
+  // tools reject the same malformed artifacts.
+  const schemaError = validateEnvelopeShape(envelope);
   if (schemaError !== null) {
     return fail("envelope-shape", "Evidence envelope shape", schemaError);
   }
@@ -508,13 +527,24 @@ export function verifyEvidence({ jws, jwks, pack }) {
 // ---------------------------------------------------------------------------
 
 function main() {
-  const { values } = parseArgs({
-    options: {
-      evidence: { type: "string" },
-      jwks: { type: "string" },
-      pack: { type: "string" },
-    },
-  });
+  // parseArgs throws on an unknown flag / stray positional / a value-option given
+  // with no value. Bad usage is an OPERATOR error (exit 2, like the missing-args
+  // path below) — NEVER an uncaught throw that Node exits 1 on. Exit 1 is the
+  // "NOT valid evidence" VERDICT; a typo'd flag is not a verdict.
+  let values;
+  try {
+    ({ values } = parseArgs({
+      options: {
+        evidence: { type: "string" },
+        jwks: { type: "string" },
+        pack: { type: "string" },
+      },
+    }));
+  } catch (error) {
+    console.error(`INPUT ERROR (nothing was verified): ${error instanceof Error ? error.message : String(error)}`);
+    console.error("usage: node verifier/verify.mjs --evidence <evidence.jws> --jwks <jwks.json> [--pack <pack.json>]");
+    process.exit(2);
+  }
   if (!values.evidence || !values.jwks) {
     console.error("usage: node verifier/verify.mjs --evidence <evidence.jws> --jwks <jwks.json> [--pack <pack.json>]");
     process.exit(2);

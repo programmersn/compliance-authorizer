@@ -208,6 +208,161 @@ describe("replay CLI exit discipline", () => {
     expect(result.status).toBe(2);
     expect(result.stdout + result.stderr).toContain("usage:");
   });
+
+  it("an unknown flag → exit 2 (operator error), never exit 1 — parseArgs throws but bad usage is not a verdict", () => {
+    // parseArgs (strict) throws on an unknown flag; the throw is routed to exit 2,
+    // never an uncaught Node exit 1 (the verdict code) that automation would misread
+    // as "not reproduced / not authentic" for a mere typo.
+    const result = spawnSync(
+      process.execPath,
+      ["--experimental-strip-types", "--no-warnings", replayScript, "--evidence", evidencePath, "--pack", genuinePackPath, "--bogus-flag"],
+      { encoding: "utf8" },
+    );
+    expect(result.status).toBe(2);
+    expect(result.stdout + result.stderr).toContain("INPUT ERROR");
+    expect(result.stdout + result.stderr).not.toContain("RESULT:");
+  });
+
+  it("evidence that is not a 3-segment JWS → exit 2 INPUT ERROR (structural operator error)", () => {
+    const bad = join(workDir, "not-a-jws.txt");
+    writeFileSync(bad, "onlyonesegment", "utf8");
+    const result = spawnSync(
+      process.execPath,
+      ["--experimental-strip-types", "--no-warnings", replayScript, "--evidence", bad, "--pack", genuinePackPath],
+      { encoding: "utf8" },
+    );
+    expect(result.status).toBe(2);
+    expect(result.stdout + result.stderr).toContain("3-segment");
+    expect(result.stdout + result.stderr).not.toContain("RESULT:");
+  });
+
+  it("a non-canonical base64url segment (padded payload) → exit 2, never read as reproduced", () => {
+    // Node's base64url decoder is lenient (it ignores `=` padding), so a padded
+    // payload decodes to the same envelope and bare replay would otherwise emit a
+    // REPRODUCED verdict for a non-compact JWS. The canonical-base64url guard (shared
+    // with verify.mjs via isCanonicalB64url) rejects it as malformed input instead.
+    const [header, payloadB64, signature] = readFileSync(evidencePath, "utf8")
+      .trim()
+      .split(".") as [string, string, string];
+    const paddedPath = join(workDir, "padded-payload.jws");
+    writeFileSync(paddedPath, `${header}.${payloadB64}=.${signature}`, "utf8");
+    const result = spawnSync(
+      process.execPath,
+      ["--experimental-strip-types", "--no-warnings", replayScript, "--evidence", paddedPath, "--pack", genuinePackPath],
+      { encoding: "utf8" },
+    );
+    const out = result.stdout + result.stderr;
+    expect(result.status).toBe(2);
+    expect(out).toContain("canonical base64url");
+    expect(out).not.toContain("RESULT: REPRODUCED");
+  });
+
+  it("a malformed envelope MISSING a required field → exit 2 (strict-shape guard), never an exit-1 crash", () => {
+    // The strict v0.1 envelope-shape guard (reused from verify.mjs). Without it, a
+    // missing reason_codes reached replayEnvelope, whose canonicalize(undefined)
+    // threw → a raw CanonicalizationError stack and Node exit 1 (the verdict code).
+    // The pack refs are left matching, so this would otherwise reach the replay leg.
+    const [header, payloadB64, signature] = readFileSync(evidencePath, "utf8")
+      .trim()
+      .split(".") as [string, string, string];
+    const envelope = JSON.parse(Buffer.from(payloadB64, "base64url").toString("utf8")) as Record<string, unknown>;
+    delete envelope["reason_codes"];
+    const payload = Buffer.from(JSON.stringify(envelope), "utf8").toString("base64url");
+    const malformedPath = join(workDir, "missing-reason-codes.jws");
+    writeFileSync(malformedPath, `${header}.${payload}.${signature}`, "utf8");
+    const result = spawnSync(
+      process.execPath,
+      ["--experimental-strip-types", "--no-warnings", replayScript, "--evidence", malformedPath, "--pack", genuinePackPath],
+      { encoding: "utf8" },
+    );
+    const out = result.stdout + result.stderr;
+    expect(result.status).toBe(2); // operator error, NOT an exit-1 crash
+    expect(out).toContain("v0.1 schema");
+    expect(out).toContain("missing fields");
+    expect(out).not.toContain("CanonicalizationError"); // no raw stack trace leaked
+    expect(out).not.toContain("RESULT:");
+  });
+
+  it("a malformed envelope (missing envelope_version) → exit 2, NOT a false REPRODUCED (exit 0)", () => {
+    // Bare replay previously had NO schema gate, so deleting envelope_version still
+    // printed RESULT: REPRODUCED and exited 0 — an invalid evidence envelope looked
+    // reproducible to exit-code-only automation. The strict-shape guard closes that.
+    const [header, payloadB64, signature] = readFileSync(evidencePath, "utf8")
+      .trim()
+      .split(".") as [string, string, string];
+    const envelope = JSON.parse(Buffer.from(payloadB64, "base64url").toString("utf8")) as Record<string, unknown>;
+    delete envelope["envelope_version"];
+    const payload = Buffer.from(JSON.stringify(envelope), "utf8").toString("base64url");
+    const malformedPath = join(workDir, "missing-envelope-version.jws");
+    writeFileSync(malformedPath, `${header}.${payload}.${signature}`, "utf8");
+    const result = spawnSync(
+      process.execPath,
+      ["--experimental-strip-types", "--no-warnings", replayScript, "--evidence", malformedPath, "--pack", genuinePackPath],
+      { encoding: "utf8" },
+    );
+    const out = result.stdout + result.stderr;
+    expect(result.status).toBe(2);
+    expect(out).toContain("v0.1 schema");
+    expect(out).not.toContain("RESULT: REPRODUCED"); // never a false success
+  });
+
+  it("a genuine pack but the envelope's decision was overwritten → RESULT: NOT REPRODUCED, exit 1 (the central verdict)", () => {
+    // The tool's reason for existing: the cited decision does not re-derive. Overwrite
+    // decision to "allow" while leaving reason_codes/matched_rules at the deny values
+    // (bare replay never checks the signature). Re-evaluation still yields deny → a
+    // reproducibility VERDICT (exit 1), distinct from the D12 "could not be attempted".
+    const [header, payloadB64, signature] = readFileSync(evidencePath, "utf8")
+      .trim()
+      .split(".") as [string, string, string];
+    const envelope = JSON.parse(Buffer.from(payloadB64, "base64url").toString("utf8")) as Record<string, unknown>;
+    envelope["decision"] = "allow"; // re-evaluation will still yield deny
+    const payload = Buffer.from(JSON.stringify(envelope), "utf8").toString("base64url");
+    const mismatchPath = join(workDir, "decision-mismatch.jws");
+    writeFileSync(mismatchPath, `${header}.${payload}.${signature}`, "utf8");
+    const result = spawnSync(
+      process.execPath,
+      ["--experimental-strip-types", "--no-warnings", replayScript, "--evidence", mismatchPath, "--pack", genuinePackPath],
+      { encoding: "utf8" },
+    );
+    const out = result.stdout + result.stderr;
+    expect(result.status).toBe(1); // a verdict, not an operator error
+    expect(out).toContain("RESULT: NOT REPRODUCED");
+    expect(out).toContain("re-evaluation yields");
+    expect(out).not.toContain("could not be attempted"); // not the D12 path
+  });
+
+  it("a lone surrogate on a D12 (foreign-evaluator) artifact → exit 2 (malformed wins), never the D12 'could not be attempted'", () => {
+    // The CHANGELOG claims uniform rejection "including the D12 evaluator-mismatch
+    // path." replayEnvelope's D12 early-return precedes its field canonicalization,
+    // so only the up-front canonicalize guard catches a surrogate on a D12 artifact.
+    // Pin it: a foreign-evaluator artifact carrying a surrogate is exit 2 (invalid
+    // Unicode), NOT the D12 verdict — proof the malformed guard beats the early-return.
+    const foreignPack = {
+      ...(JSON.parse(readFileSync(genuinePackPath, "utf8")) as Pack),
+      required_evaluator_version: "9.9.9",
+    };
+    const foreignPackPath = join(workDir, "d12-surrogate-pack.json");
+    writeFileSync(foreignPackPath, JSON.stringify(foreignPack, null, 2), "utf8");
+    const [header, payloadB64, signature] = readFileSync(evidencePath, "utf8")
+      .trim()
+      .split(".") as [string, string, string];
+    const envelope = JSON.parse(Buffer.from(payloadB64, "base64url").toString("utf8")) as Record<string, unknown>;
+    envelope["evaluator_version"] = "9.9.9";
+    envelope["rule_pack_hash"] = sha256Hex(canonicalize(foreignPack));
+    envelope["reason_codes"] = ["MAYSIR", "\uD800"]; // lone surrogate
+    const payload = Buffer.from(JSON.stringify(envelope), "utf8").toString("base64url");
+    const p = join(workDir, "d12-lone-surrogate.jws");
+    writeFileSync(p, `${header}.${payload}.${signature}`, "utf8");
+    const result = spawnSync(
+      process.execPath,
+      ["--experimental-strip-types", "--no-warnings", replayScript, "--evidence", p, "--pack", foreignPackPath],
+      { encoding: "utf8" },
+    );
+    const out = result.stdout + result.stderr;
+    expect(result.status).toBe(2);
+    expect(out).toContain("invalid Unicode");
+    expect(out).not.toContain("could not be attempted");
+  });
 });
 
 describe("replay --jwks combined verdict (opt-in authenticity)", () => {
@@ -246,5 +401,186 @@ describe("replay --jwks combined verdict (opt-in authenticity)", () => {
     expect(status).toBe(2);
     expect(out).toContain("INPUT ERROR");
     expect(out).not.toContain("AUTHENTICITY");
+  });
+
+  it("FORGED rule_pack_hash + --jwks → AUTHENTICITY FAIL, exit 1 — NOT an exit-2 'supply the cited pack'", () => {
+    // The exit-code-precedence fix: the cited rule_pack_hash is UNAUTHENTICATED at
+    // the pack-mismatch check, so a tampered rule_pack_hash (which breaks the
+    // signature; the attacker has no key to re-sign) would otherwise trip the
+    // exit-2 "supply the exact cited pack" path BEFORE authenticity ran — misreporting
+    // forged evidence as an operator/input condition. In --jwks mode the signature
+    // must decide: this is an authenticity FAIL (exit 1), and the operator is NOT
+    // sent hunting for a "cited pack" that never existed. The genuine pack/jwks are
+    // supplied, so the ONLY defect is the forged field.
+    const [header, payloadB64, signature] = readFileSync(evidencePath, "utf8")
+      .trim()
+      .split(".") as [string, string, string];
+    const envelope = JSON.parse(
+      Buffer.from(payloadB64, "base64url").toString("utf8"),
+    ) as Record<string, unknown>;
+    envelope["rule_pack_hash"] = "0".repeat(64); // well-formed sha256-hex, but forged
+    const forgedPayload = Buffer.from(JSON.stringify(envelope), "utf8").toString(
+      "base64url",
+    );
+    const forgedPath = join(workDir, "forged-pack-hash.jws");
+    writeFileSync(forgedPath, `${header}.${forgedPayload}.${signature}`, "utf8");
+
+    const result = spawnSync(
+      process.execPath,
+      [
+        "--experimental-strip-types",
+        "--no-warnings",
+        replayScript,
+        "--evidence",
+        forgedPath,
+        "--pack",
+        genuinePackPath,
+        "--jwks",
+        genuineJwksPath,
+      ],
+      { encoding: "utf8" },
+    );
+    const out = result.stdout + result.stderr;
+    expect(result.status).toBe(1); // an authenticity VERDICT, not an operator error
+    expect(out).toContain("AUTHENTICITY (--jwks): FAIL");
+    expect(out).not.toContain("supply the exact cited pack"); // not misreported as exit-2
+    expect(result.status).not.toBe(2);
+  });
+
+  it("AUTHENTIC artifact + a content-modified --pack + --jwks → exit 2 (genuine wrong pack), NOT an authenticity fail", () => {
+    // The other side of the disambiguation: the artifact is genuine, so the cited
+    // rule_pack_hash is signed/real and the operator simply handed the wrong pack.
+    // Authenticity passes (no-pack), so this correctly FALLS THROUGH to the exit-2
+    // operator error — it must NOT be misreported as an authenticity FAIL.
+    const pack = JSON.parse(readFileSync(genuinePackPath, "utf8")) as Pack;
+    pack.rules = pack.rules.filter((rule) => rule.id !== "INTOXICANTS-MCC"); // same id/version, different hash
+    const modifiedPackPath = join(workDir, "content-modified-for-jwks.json");
+    writeFileSync(modifiedPackPath, JSON.stringify(pack, null, 2), "utf8");
+
+    const { status, out } = runReplay(modifiedPackPath, genuineJwksPath);
+    expect(status).toBe(2); // operator error: wrong pack for an AUTHENTIC artifact
+    expect(out).toContain("INPUT ERROR");
+    expect(out).toContain("rule_pack_hash");
+    expect(out).not.toContain("AUTHENTICITY (--jwks): FAIL");
+  });
+
+  it("a lone surrogate in payment_intent (a field replay does not itself canonicalize) → exit 2, not a silent verdict", () => {
+    // The up-front malformed-artifact guard canonicalizes the WHOLE envelope, so a
+    // lone surrogate ANYWHERE (here in payment_intent, which replayEnvelope reads but
+    // never canonicalizes, and which the D12 early-return would also skip) is a clean
+    // operator error — closing the gap where such an artifact previously slipped
+    // through bare replay and emitted a RESULT verdict.
+    const [header, payloadB64, signature] = readFileSync(evidencePath, "utf8")
+      .trim()
+      .split(".") as [string, string, string];
+    const envelope = JSON.parse(
+      Buffer.from(payloadB64, "base64url").toString("utf8"),
+    ) as Record<string, unknown>;
+    const intent = envelope["payment_intent"] as Record<string, unknown>;
+    const merchant = intent["merchant"] as Record<string, unknown>;
+    merchant["name"] = `casino${String.fromCharCode(0xd800)}hotel`; // lone surrogate
+    const malformedPayload = Buffer.from(JSON.stringify(envelope), "utf8").toString(
+      "base64url",
+    );
+    const malformedPath = join(workDir, "intent-lone-surrogate.jws");
+    writeFileSync(malformedPath, `${header}.${malformedPayload}.${signature}`, "utf8");
+
+    const result = spawnSync(
+      process.execPath,
+      [
+        "--experimental-strip-types",
+        "--no-warnings",
+        replayScript,
+        "--evidence",
+        malformedPath,
+        "--pack",
+        genuinePackPath,
+      ],
+      { encoding: "utf8" },
+    );
+    const out = result.stdout + result.stderr;
+    expect(result.status).toBe(2); // malformed artifact = operator error, uniformly
+    expect(out).toContain("INPUT ERROR");
+    expect(out).toContain("invalid Unicode");
+    expect(out).not.toContain("RESULT:"); // never a silent reproducibility verdict
+  });
+
+  it("a lone surrogate + --jwks → exit 2 (malformed wins over authenticity), never an exit-1 AUTHENTICITY FAIL", () => {
+    // PRECEDENCE pin — the --jwks branch of "rejected uniformly on every branch."
+    // A lone surrogate ALSO breaks the signature, so without the up-front guard
+    // this artifact would reach the --jwks disambiguation and read as an
+    // authenticity FAIL (exit 1). But a non-canonicalizable envelope is malformed
+    // INPUT: it cannot be meaningfully verified OR replayed, so the malformed guard
+    // runs FIRST and wins uniformly (exit 2) and the authenticity leg never runs.
+    // This holds the documented ordering even when --jwks is supplied.
+    const [header, payloadB64, signature] = readFileSync(evidencePath, "utf8")
+      .trim()
+      .split(".") as [string, string, string];
+    const envelope = JSON.parse(
+      Buffer.from(payloadB64, "base64url").toString("utf8"),
+    ) as Record<string, unknown>;
+    envelope["reason_codes"] = ["MAYSIR", "\uD800"]; // lone surrogate
+    const malformedPayload = Buffer.from(JSON.stringify(envelope), "utf8").toString(
+      "base64url",
+    );
+    const malformedPath = join(workDir, "lone-surrogate-jwks.jws");
+    writeFileSync(malformedPath, `${header}.${malformedPayload}.${signature}`, "utf8");
+
+    const result = spawnSync(
+      process.execPath,
+      [
+        "--experimental-strip-types",
+        "--no-warnings",
+        replayScript,
+        "--evidence",
+        malformedPath,
+        "--pack",
+        genuinePackPath,
+        "--jwks",
+        genuineJwksPath,
+      ],
+      { encoding: "utf8" },
+    );
+    const out = result.stdout + result.stderr;
+    expect(result.status).toBe(2); // malformed wins uniformly — even with --jwks supplied
+    expect(out).toContain("INPUT ERROR");
+    expect(out).toContain("invalid Unicode");
+    expect(out).not.toContain("AUTHENTICITY"); // the authenticity leg never ran
+    expect(result.status).not.toBe(1); // NOT misread as an authenticity verdict
+  });
+
+  it("a malformed envelope MISSING a required field + --jwks → exit 2 (strict-shape guard), BEFORE the authenticity leg", () => {
+    // The strict-shape guard runs before the --jwks authenticity disambiguation, so a
+    // missing-field artifact is a malformed operator error (exit 2) — never reaching,
+    // and never reported as, an authenticity verdict.
+    const [header, payloadB64, signature] = readFileSync(evidencePath, "utf8")
+      .trim()
+      .split(".") as [string, string, string];
+    const envelope = JSON.parse(
+      Buffer.from(payloadB64, "base64url").toString("utf8"),
+    ) as Record<string, unknown>;
+    delete envelope["reason_codes"];
+    const payload = Buffer.from(JSON.stringify(envelope), "utf8").toString("base64url");
+    const malformedPath = join(workDir, "missing-field-jwks.jws");
+    writeFileSync(malformedPath, `${header}.${payload}.${signature}`, "utf8");
+    const result = spawnSync(
+      process.execPath,
+      [
+        "--experimental-strip-types",
+        "--no-warnings",
+        replayScript,
+        "--evidence",
+        malformedPath,
+        "--pack",
+        genuinePackPath,
+        "--jwks",
+        genuineJwksPath,
+      ],
+      { encoding: "utf8" },
+    );
+    const out = result.stdout + result.stderr;
+    expect(result.status).toBe(2);
+    expect(out).toContain("v0.1 schema");
+    expect(out).not.toContain("AUTHENTICITY"); // shape guard precedes the authenticity leg
   });
 });
