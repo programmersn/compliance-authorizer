@@ -22,5 +22,8 @@ Thumbs.db
 .idea/
 .vscode/
 
+# gstack local state
+.gstack/
+
 # Logs
 *.log
