@@ -12,9 +12,10 @@ profile (v0.1)**.
 
 ## What it is (and isn't)
 
-- A runtime authorization API (`POST /authorize` → a signed decision envelope), a
-  standalone **offline verifier** (trust nothing on the server), and a web playground +
-  evidence viewer (W3-4, not built yet).
+- A runtime authorization API (`POST /authorize` → a signed decision envelope),
+  verification endpoints (`GET /.well-known/jwks.json`, `GET /rule-packs/:id/:version`,
+  `POST /verify`), a standalone **offline verifier** and decision **replay** tool, and a
+  web playground + evidence viewer (W3-4, not built yet).
 - Decision **provenance** — a signed allow/deny/review record. **Not** PII redaction.
 - **Deterministic** — no LLM in the decision path; the same intent + rule-pack hash always
   yields the same decision.
@@ -26,17 +27,48 @@ profile (v0.1)**.
 
 ## Status
 
-**W1 — crypto/API core: implemented.** `POST /authorize` issues Ed25519-signed evidence
-envelopes (JWS-compact over RFC 8785 canonical JSON); the standalone offline verifier
-(`verifier/verify.mjs`, node built-ins only) checks them with zero server trust; the
-uncertified synthetic Shariah v0.1 pack and the crypto test matrix (negative-alg,
-property-based, canonicalization invariance) are in. `npm test` runs the gate:
-sign → offline-verify round-trip plus 90+ supporting tests.
+**W1 — crypto/API core: complete (v0.1.0.0).** `POST /authorize` issues Ed25519-signed
+evidence envelopes (JWS-compact over RFC 8785 canonical JSON); the standalone offline
+verifier (`verifier/verify.mjs`, node built-ins only) checks them with zero server trust;
+the uncertified synthetic Shariah v0.1 pack and the crypto test matrix (negative-alg,
+property-based, canonicalization invariance) are in.
 
-Backend completion (W2: JWKS + verify endpoints, decision replay) and the web surfaces
-(W3-4: playground, evidence viewer) are not built yet. The locked design layer is in
-[`DESIGN.md`](./DESIGN.md) and the build tasks are in [`TODOS.md`](./TODOS.md). Read
-`DESIGN.md` before building.
+**W2 — backend: complete (v0.2.1.0).** `GET /.well-known/jwks.json` publishes all
+historical verifying keys (RFC 7517) so any envelope stays offline-verifiable across key
+rotation. `GET /rule-packs/:id/:version` serves the exact canonical pack bytes a decision
+was made against (sha256 of the response body equals the envelope's `rule_pack_hash`).
+`POST /verify` accepts an evidence artifact; a **well-formed** request always returns HTTP 200
+with two distinct verdict fields: `valid` (authenticity — was this signed by the issuer's key,
+intact and canonical?) and `reproducibility` (does the cited decision re-derive against the cited
+pack?). `valid:false` is a verdict, not a 4xx. A malformed request (missing field, wrong type,
+extra field) returns 400 problem+json — error ≠ deny on the verification path too. Decision replay (`scripts/replay.ts`) re-derives the decision from the cited intent
+and pack; `--jwks` adds an authenticity gate so a single exit code covers both properties.
+The verifier enforces the EXACT v0.1 envelope schema and rejects RFC 8785 lone surrogates
+on both canonicalizers. `npm test` covers 218 tests across 14 test files. See
+[`REPRODUCIBILITY.md`](./REPRODUCIBILITY.md) for the zero-trust walkthrough and
+[`examples/`](./examples/) for a committed, byte-reproducible worked example.
+
+The web surfaces (W3-4: playground, evidence viewer) are not built yet. The locked design
+layer is in [`DESIGN.md`](./DESIGN.md) and the build tasks are in [`TODOS.md`](./TODOS.md).
+Read `DESIGN.md` before building.
+
+## Documentation
+
+| Document | What it covers |
+|---|---|
+| [`docs/getting-started.md`](./docs/getting-started.md) | Tutorial: clone to first signed decision in 5 minutes |
+| [`REPRODUCIBILITY.md`](./REPRODUCIBILITY.md) | Zero-trust walkthrough: verify and replay any decision offline |
+| [`examples/README.md`](./examples/README.md) | Committed byte-reproducible worked example |
+| [`docs/evaluator-semantics.md`](./docs/evaluator-semantics.md) | Pinned evaluator contract (operators, field resolution, D12) |
+| [`CONTRIBUTING.md`](./CONTRIBUTING.md) | Development setup, testing, conventions |
+| [`DESIGN.md`](./DESIGN.md) | Locked design layer (read before building W3-4) |
+
+## Configuration
+
+| Variable | Default | Description |
+|---|---|---|
+| `PORT` | `8787` | HTTP port the service listens on. Must be an integer in `[1, 65535]`. |
+| `KEYS_DIR` | `.keys/` | Directory where the Ed25519 signing key is stored (gitignored). Created and populated automatically on first boot. |
 
 ## License
 
