@@ -251,7 +251,7 @@ export const authorizeRoute: FastifyPluginAsync<AuthorizeRouteOptions> = (
           throw new ProblemError(
             500,
             "Internal error",
-            "The decision was made but could not be persisted to the evidence store. No decision was made and no evidence envelope exists for this request.",
+            "A decision was computed but could not be persisted to the evidence store, so the request fails closed: no evidence envelope is returned for this request.",
             "about:blank",
           );
         }

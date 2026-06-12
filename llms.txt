@@ -22,8 +22,14 @@ Rules an agent consuming this API must follow:
   a decision: no envelope exists, nothing was signed. Fix the request using
   `problem.detail` / `problem.issues`, then resubmit; never reissue the same
   bytes blindly, and never read a 4xx as a deny.
-- `reason_codes` is a closed, deterministic set (Shariah v0.1 demo pack:
-  MAYSIR, INTOXICANTS, RIBA, GHARAR, MIXED_REVENUE).
+- `reason_codes` is a closed, deterministic set: the Shariah v0.1 demo pack
+  emits MAYSIR, INTOXICANTS, RIBA, GHARAR, MIXED_REVENUE, and the engine appends
+  one credential-scope code, `AGENT_SCOPE_EXCEEDED`, on a two-layer intent.
+- An intent MAY carry an OPTIONAL `agent_credential` (a `did:key` JWS with an
+  allowed-MCC scope). A valid credential whose scope excludes the merchant MCC
+  yields a signed `deny` carrying `AGENT_SCOPE_EXCEEDED`; an INVALID credential
+  is a `422` problem+json (`…/invalid-agent-credential`), never a deny. The
+  credential only constrains a decision, it never authorizes one.
 - Synthetic data only: never send real card, customer, or personal data.
 
 ## Docs

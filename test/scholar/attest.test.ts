@@ -241,6 +241,42 @@ describe("malformed attestations are rejected with precise codes", () => {
     );
   });
 
+  it("a canonical but WRONG-LENGTH (65-byte) signature → signature_invalid at the length gate", () => {
+    // 65 bytes, canonically base64url-encoded, in a DETACHED frame: passes the
+    // structure/canonical/alg/kid checks but trips the explicit 64-byte gate
+    // (parity with the W1 verifier's separately-tested length gate).
+    const [headerSeg, , sig] = genuine.signature.split(".") as [string, string, string];
+    const longSig = Buffer.concat([
+      Buffer.from(sig, "base64url"),
+      Buffer.from([0]),
+    ]).toString("base64url");
+    expectRejection(
+      { ...genuine, signature: `${headerSeg}..${longSig}` },
+      PACK_HASH,
+      "signature_invalid",
+      "64 bytes",
+    );
+  });
+
+  it("a non-string signature value → malformed", () => {
+    expectRejection(
+      { ...genuine, signature: 123 },
+      PACK_HASH,
+      "malformed",
+      "detached JWS-compact string",
+    );
+  });
+
+  it("an empty header segment in the detached JWS → malformed", () => {
+    const [, , sig] = genuine.signature.split(".") as [string, string, string];
+    expectRejection(
+      { ...genuine, signature: `..${sig}` },
+      PACK_HASH,
+      "malformed",
+      "empty header or signature",
+    );
+  });
+
   it("metadata missing a field → claim_invalid (closed metadata shape)", () => {
     const partial = { name: metadata.name, body: metadata.body, role: metadata.role };
     expectRejection(

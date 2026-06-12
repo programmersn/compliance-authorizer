@@ -220,6 +220,7 @@ Service-specific problem `type` URIs live under
 | `400` | `about:blank` ("Request rejected before evaluation") | The body is not parseable JSON at all (or otherwise dies in the framework before validation). | any body route |
 | `413` | `about:blank` ("Request rejected before evaluation") | The body exceeds the pinned 1 MiB cap. | any body route |
 | `422` | `…/problems/unknown-profile` | The intent is well-formed but names a compliance profile this engine has not loaded. The response lists `available_profiles`. | `POST /authorize` |
+| `422` | `…/problems/invalid-agent-credential` | The intent carries an OPTIONAL `agent_credential` that **failed verification** (malformed JWS, `alg` ≠ `EdDSA`, unresolvable / mismatched `did:key` issuer, bad signature, or a non-canonical / schema-invalid payload). The `credential_error` extension names which (`malformed`, `alg_rejected`, `issuer_invalid`, `signature_invalid`, `payload_invalid`). An **invalid** credential is an integration failure, never a `deny`. | `POST /authorize` |
 | `404` | `…/problems/rule-pack-not-found` | The requested rule pack id/version is not served by this engine. | `GET /rule-packs/:id/:version` |
 | `404` | `about:blank` ("Not found") | No route matches the method + path. | anywhere |
 | `500` | `about:blank` ("Internal error") | The service itself failed. Same guarantee: no decision, no envelope. | anywhere |
@@ -291,6 +292,20 @@ not serve:
 }
 ```
 
+**`422 invalid-agent-credential`** — an intent whose optional `agent_credential`
+fails verification (here a tampered signature). The `credential_error` extension
+names the defect; **no envelope is signed** (error ≠ deny):
+
+```json
+{
+  "type": "https://github.com/programmersn/compliance-authorizer/problems/invalid-agent-credential",
+  "title": "Invalid agent credential",
+  "status": 422,
+  "detail": "The payment intent presents an agent credential that failed verification: agent-credential Ed25519 signature does not verify — the credential was tampered with or was not issued by this did:key. No decision was made and no evidence envelope exists for this request.",
+  "credential_error": "signature_invalid"
+}
+```
+
 **`404 rule-pack-not-found`** — `GET /rule-packs/shariah/9.9.9`:
 
 ```json
@@ -314,6 +329,30 @@ not serve:
 ```
 
 ---
+
+## The optional agent credential (two-layer intents)
+
+`POST /authorize` accepts an OPTIONAL `agent_credential` field on the payment
+intent: a JWS-compact, `did:key`-issued credential carrying an allowed-MCC
+scope. It changes nothing about the always-200 contract above — it only adds a
+second, most-restrictive layer:
+
+- **No credential** → the rule-pack decision verbatim (unchanged from before).
+- **Valid credential, MCC in scope** → the rule-pack decision verbatim.
+- **Valid credential, MCC out of scope** → a **SIGNED `deny` (HTTP 200 +
+  envelope)** carrying the engine-level reason code `AGENT_SCOPE_EXCEEDED`. A
+  decision, not an error: `deny` = halt, do not retry.
+- **Invalid credential** (any verification failure) → **`422
+  invalid-agent-credential`** problem+json, no envelope (the table row above).
+  error ≠ deny: an invalid credential is an integration failure, never a `deny`.
+
+The credential is a **constraint, not an authorization**: it can only narrow a
+decision, never widen it, so a self-issued credential confers no privilege (see
+[`evaluator-semantics.md` §7.5](./evaluator-semantics.md)). It lives inside
+`payment_intent`, so `intent_hash` covers it and offline replay re-verifies it
+with no extra inputs (`did:key` is self-certifying). Full semantics:
+[`evaluator-semantics.md` §7](./evaluator-semantics.md); the reason code and
+problem shape: [`reason-codes.md`](./reason-codes.md).
 
 ## The same split on the verification path
 

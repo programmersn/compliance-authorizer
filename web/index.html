@@ -171,7 +171,7 @@
         </div>
       </div>
       <div>
-        <div class="codeblk" aria-label="HTTP contract example"><span class="c"># a decision is ALWAYS 200 — read the body (a DENY is 200, not an error)</span>
+        <div class="codeblk" tabindex="0" aria-label="HTTP contract example, horizontally scrollable"><span class="c"># a decision is ALWAYS 200 — read the body (a DENY is 200, not an error)</span>
 $ curl -s localhost:8787/authorize -H 'content-type: application/json' -d @casino-hotel.json
 <span class="g">{ "decision": "deny", "reason_codes": ["MAYSIR"],</span>
 <span class="g">  "rule_pack_hash": "5573ec…", "evidence_artifact": "eyJh…", … }</span>

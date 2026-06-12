@@ -157,6 +157,11 @@ function wrapDriver(
   },
   backend: SqliteDriver["backend"],
 ): SqliteDriver {
+  // Idempotent close: both engines throw if close() is called on an
+  // already-closed handle, but the store's lifecycle has two legitimate closers
+  // — the server's onClose hook AND an explicit caller (e.g. a test that closes
+  // the store after app.close()). Guard so the second close is a harmless no-op.
+  let closed = false;
   return {
     backend,
     exec: (sql) => {
@@ -178,6 +183,8 @@ function wrapDriver(
       };
     },
     close: () => {
+      if (closed) return;
+      closed = true;
       db.close();
     },
   };

@@ -110,6 +110,19 @@ describe("tampered / alg-confused credentials are rejected (never decision input
     });
     expectRejection(credential, "signature_invalid", "verify");
   });
+
+  it("a canonical but WRONG-LENGTH (65-byte) signature → signature_invalid at the length gate", () => {
+    // A 65-byte signature, canonically base64url-encoded, passes the structure
+    // and canonical-encoding checks but trips the EXPLICIT Ed25519 length gate
+    // (distinct from the tamper path above, which keeps a 64-byte signature —
+    // parity with the W1 verifier's separately-tested length gate).
+    const [header, payload, signature] = genuine.split(".") as [string, string, string];
+    const longSig = Buffer.concat([
+      Buffer.from(signature, "base64url"),
+      Buffer.from([0]),
+    ]).toString("base64url");
+    expectRejection(`${header}.${payload}.${longSig}`, "signature_invalid", "64 bytes");
+  });
 });
 
 describe("malformed credentials are rejected with precise codes", () => {

@@ -43,7 +43,8 @@ is one worked example of it.
 | `decision: "deny"` | effect `block`, terminal | **Halt, no retry**: the evaluator is deterministic (no LLM, no clock, no randomness), so resubmitting the same intent re-derives the same deny. |
 | `decision: "review"` | effect `escalate` (human-approval gate) | Not a soft permit and not a soft block — a human takes over. |
 | HTTP 4xx `application/problem+json` | an **engine error**, never a policy outcome | error ≠ deny: no decision was made, nothing was signed. The AGT side must surface it as an integration fault and must not record a `block`. |
-| `reason_codes` (closed set: `MAYSIR`, `INTOXICANTS`, `RIBA`, `GHARAR`, `MIXED_REVENUE`) | machine-readable violation codes on the outcome | Stable, enumerable, deterministic per intent + pack hash. |
+| `reason_codes` (closed set: pack codes `MAYSIR`, `INTOXICANTS`, `RIBA`, `GHARAR`, `MIXED_REVENUE`, plus the engine code `AGENT_SCOPE_EXCEEDED` on a credentialed intent) | machine-readable violation codes on the outcome | Stable, enumerable, deterministic per intent + pack hash. |
+| `agent_credential` (OPTIONAL `did:key` JWS with an allowed-MCC scope) | a presented capability/credential that **narrows** the request | A constraint, not an authorization: a valid out-of-scope credential → signed `deny` (`AGENT_SCOPE_EXCEEDED`); an invalid one → `422` (`…/invalid-agent-credential`), never a `block`. |
 | `matched_rules[]` | rule-level evidence detail | Carries title, description, and the `standards_ref` slot (`pending — populated on v1.0 certification`). |
 | rule pack (`rule_pack_id`, `rule_pack_version`, `rule_pack_hash`) | policy-pack metadata + content address | The pack is git-tracked, RFC 8785-canonicalized, and content-addressed by its SHA-256; `GET /rule-packs/:id/:version` serves the exact canonical bytes. |
 | `rule_pack_status: "uncertified"` | a required metadata label | The honesty marker is machine-readable on every response; it must survive the projection. |

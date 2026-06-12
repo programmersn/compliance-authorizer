@@ -26,16 +26,39 @@ const GLYPHS = {
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M12 4 L21 19 H3 Z"/><line x1="12" y1="10" x2="12" y2="14"/><circle cx="12" cy="16.6" r="1.1" fill="currentColor" stroke="none"/></svg>',
 };
 
-/** Closed reason-code → short human label map (mirrors the shipped pack). */
+/**
+ * Closed reason-code → short human label map: the shipped pack's codes plus the
+ * engine-level credential-scope code (AGENT_SCOPE_EXCEEDED). Any unmapped code
+ * still renders as its raw string (graceful), but every code the engine can emit
+ * has a label here.
+ */
 export const REASON_LABELS = {
   MAYSIR: "gambling",
   INTOXICANTS: "intoxicants",
   RIBA: "interest",
   GHARAR: "excessive uncertainty",
   MIXED_REVENUE: "mixed impermissible revenue",
+  AGENT_SCOPE_EXCEEDED: "agent credential scope exceeded",
 };
 
 const AAOIFI_PENDING = "pending — populated on v1.0 certification";
+
+/** Engine-level reason code for a credential-scope deny (src/vc/enforce.ts). */
+const AGENT_SCOPE_EXCEEDED = "AGENT_SCOPE_EXCEEDED";
+
+/**
+ * A credential-scope deny: the rule pack matched nothing, but the presented
+ * agent credential's allowed-MCC scope excluded the merchant, so the engine
+ * denied. Distinguished from a pack-default ALLOW (which also has no matched
+ * rules) so the certificate never labels a deny as a default allow.
+ */
+function isScopeDeny(body) {
+  return (
+    String(body.decision) === "deny" &&
+    Array.isArray(body.reason_codes) &&
+    body.reason_codes.includes(AGENT_SCOPE_EXCEEDED)
+  );
+}
 
 function el(tag, className, text) {
   const node = document.createElement(tag);
@@ -155,6 +178,9 @@ function explanationLine(body) {
   const rules = Array.isArray(body.matched_rules) ? body.matched_rules : [];
   const first = rules[0];
   if (first && typeof first.description === "string") return first.description;
+  if (isScopeDeny(body)) {
+    return "No rule pack rule matched, but the presented agent credential's allowed-MCC scope excludes this merchant's MCC — the engine denied (AGENT_SCOPE_EXCEEDED).";
+  }
   return "No rule in the synthetic demo pack matched this intent; the pack's default decision applies (category-level screening only).";
 }
 
@@ -184,10 +210,20 @@ function basisSection(body) {
 
   const rules = Array.isArray(body.matched_rules) ? body.matched_rules : [];
   if (rules.length === 0) {
+    // No pack rule matched. Two distinct outcomes share this shape: a pack-default
+    // ALLOW, and a credential-scope DENY (the basis is the credential, not a pack
+    // rule). Label each honestly so a deny is never shown as a default allow.
+    const scopeDenied = isScopeDeny(body);
     const row = el("tr");
     row.append(
-      el("td", "k mono", "(no rule matched)"),
-      el("td", "", "Pack default decision — allow"),
+      el("td", "k mono", scopeDenied ? "(agent credential)" : "(no rule matched)"),
+      el(
+        "td",
+        "",
+        scopeDenied
+          ? "Scope exceeded — merchant MCC not in the credential's allowed_mcc"
+          : "Pack default decision — allow",
+      ),
       el("td", "pending", AAOIFI_PENDING), // the placeholder is styled, never blank
     );
     table.append(row);
@@ -377,6 +413,9 @@ export function renderProblemPanel(view) {
   const panel = el("aside", "problem-panel");
   panel.dataset.kind = "problem";
   panel.setAttribute("aria-label", "System error — not a decision");
+  // role=alert announces an integration failure assertively (it interrupts),
+  // rather than queuing behind the polite evidence-region updates a decision uses.
+  panel.setAttribute("role", "alert");
 
   const head = el("div", "pp-head");
   head.append(glyph("error", "pp-glyph"), el("p", "pp-name", "SYSTEM ERROR — NOT A DECISION"));

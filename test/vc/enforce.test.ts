@@ -136,6 +136,23 @@ describe("two-layer intersection matrix (EXACT decisions + reason_codes, pure de
     expect(result.reason_codes).toEqual([AGENT_SCOPE_EXCEEDED]);
   });
 
+  it("a null / array / non-string-mcc merchant never passes the scope screen (replay-edge determinism)", () => {
+    // resolveMerchantMcc reads an OWN *string* merchant.mcc only: a null merchant,
+    // an array merchant, and a numeric mcc all read as ABSENT — each unreachable
+    // through the API schema, but load-bearing for replay of foreign artifacts.
+    // Every one fails the scope screen → scope-deny, mirroring the absent-mcc case.
+    for (const merchant of [null, [], { name: "x", mcc: 7011 }]) {
+      const intent = {
+        profile: "shariah-v0.1",
+        merchant,
+        agent_credential: credentialFor("7011"),
+      } as Record<string, unknown>;
+      const result = decideIntent(intent, loadedPack.pack);
+      expect(result.decision).toBe("deny");
+      expect(result.reason_codes).toEqual([AGENT_SCOPE_EXCEEDED]);
+    }
+  });
+
   it("reason_codes stay de-duplicated even if a pack rule already carries AGENT_SCOPE_EXCEEDED", () => {
     const pack: RulePack = structuredClone(loadedPack.pack);
     pack.rules = [

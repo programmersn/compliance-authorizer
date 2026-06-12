@@ -146,6 +146,21 @@ export function buildServer(options: ServerOptions): FastifyInstance {
     ...(options.store ? { store: options.store } : {}),
   });
 
+  // Tie the evidence store's lifecycle to the server: closing the app releases
+  // the SQLite handle, so graceful restarts (and tests) don't leak or — on
+  // Windows — lock the DB file. Only registered when a store is wired; the
+  // store's close() is idempotent, so an explicit caller that also closes it is
+  // harmless. The store stays observational: this hook only releases the handle.
+  if (options.store) {
+    const store = options.store;
+    // Callback-style hook: store.close() is synchronous, so signal completion
+    // with done() rather than returning a promise.
+    app.addHook("onClose", (_instance, done) => {
+      store.close();
+      done();
+    });
+  }
+
   // W2 routes — pre-wired here so the fan-out implementers inherit a stable
   // seam; each plugin receives ONLY what it needs.
   void app.register(jwksRoute, { publishedKeys: publishedSnapshot });

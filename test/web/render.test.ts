@@ -84,6 +84,19 @@ const ALLOW_BODY = {
   matched_rules: [],
 };
 
+/**
+ * A credential-scope DENY: pack matched nothing (empty matched_rules) but the
+ * agent credential's allowed_mcc excluded the merchant, so the engine denied
+ * with the engine-level code. Shares the empty-matched_rules shape with an
+ * ALLOW, so the certificate must NOT label it a default allow.
+ */
+const SCOPE_DENY_BODY = {
+  ...DENY_BODY,
+  decision: "deny",
+  reason_codes: ["AGENT_SCOPE_EXCEEDED"],
+  matched_rules: [],
+};
+
 const CASINO_INTENT = {
   profile: "shariah-v0.1",
   merchant: { name: "casino-hotel", mcc: "7011", attributes: ["casino", "gambling"] },
@@ -254,14 +267,34 @@ describe("state 4 — success: the decision certificate (DESIGN.md §5 field ran
     expect(allow.textContent).toContain("(no rule matched)");
   });
 
+  it("a credential-scope DENY is never labeled a default allow (empty matched_rules + AGENT_SCOPE_EXCEEDED)", () => {
+    const scope = renderCertificate(SCOPE_DENY_BODY);
+    expect(scope.dataset["decision"]).toBe("deny");
+    expect(must(scope.querySelector(".dlabel")).textContent).toBe("DENY");
+    expect(must(scope.querySelector(".dreason")).textContent).toBe(
+      "AGENT_SCOPE_EXCEEDED — agent credential scope exceeded",
+    );
+    // The basis + explanation must reflect the credential scope, NEVER "default allow".
+    const basis = must(scope.querySelector(".basis"));
+    expect(basis.textContent).toContain("Scope exceeded");
+    expect(basis.textContent).toContain("(agent credential)");
+    expect(basis.textContent).not.toContain("Pack default decision — allow");
+    expect(must(scope.querySelector(".dexpl")).textContent).toContain(
+      "allowed-MCC scope excludes",
+    );
+    // honesty markers stay present on a scope deny
+    expect(must(scope.querySelector(".chip")).textContent).toBe("Uncertified");
+  });
+
   it("refuses to render a certificate without a signed evidence artifact (error ≠ deny)", () => {
     expect(() => renderCertificate({ ...DENY_BODY, evidence_artifact: "" })).toThrow(
       /without a signed evidence artifact/,
     );
   });
 
-  it("the reason-code label map is closed over the shipped pack's codes", () => {
+  it("the reason-code label map is closed over the pack's codes plus the engine credential-scope code", () => {
     expect(Object.keys(REASON_LABELS).sort()).toEqual([
+      "AGENT_SCOPE_EXCEEDED",
       "GHARAR",
       "INTOXICANTS",
       "MAYSIR",

@@ -185,3 +185,29 @@ never signs a decision for it. The D12 evaluator-version check (§ above) runs
 invalid, because admission rules are themselves versioned semantics. The
 standalone `verifier/verify.mjs` is unchanged: it answers **authenticity**
 only and deliberately does not re-verify embedded credentials.
+
+### 7.5 Trust model — the credential **constrains**, it does not authorize
+
+The credential layer is deliberately a **self-asserted constraint**, not an
+authorization grant, and the two-layer combination (§7.3) is **purely
+subtractive**. `decideIntent` computes the pack evaluation with **zero reference**
+to the credential; the credential is consulted only to possibly *append* an
+`AGENT_SCOPE_EXCEEDED` deny. So a present credential can only turn a pack
+`allow`/`review` into a `deny`, or leave the pack decision unchanged — it can
+**never** turn a pack `deny`/`review` into an `allow`.
+
+This is why v0.1 needs **no trusted-issuer allowlist** and accepts any
+self-certifying `did:key` issuer. A credential the caller mints for itself can
+only *narrow* its own decision; a permissive self-issued credential is
+equivalent to presenting none (it yields exactly the pack's own decision), so it
+confers no privilege and cannot escalate. The signature proves only that the
+holder of that `did:key` made the scope claim — it asserts no authority, and the
+engine treats it as none. (Header `alg`/structure are still pinned and an invalid
+credential is still refused as a 4xx, §7.2 — but that is integrity, not
+authorization.)
+
+A FUTURE credential that **granted** capability (one that *widened* a decision —
+e.g. a KYC or spend-limit attestation) would be a different trust model and would
+require a trusted-issuer policy bound into the decision (and into the replay
+inputs). v0.1 ships none such: the only credential here can subtract, so issuer
+trust is not a decision input.

@@ -131,6 +131,10 @@ function wireCertificate(sheet, body) {
 async function run(intent, fromHatch) {
   const token = ++requestSeq;
   clearTimeout(slowTimer);
+  // Snapshot the viewer's current node BEFORE swapping to loading, so a hatch
+  // validation error (which renders beside the editor, not in the viewer) can
+  // restore it instead of leaving the loading state stuck in place.
+  const priorRegionNode = region ? region.firstElementChild : null;
   setRegion(renderLoading(intent, "loading"));
   // Copy swap via timer — the request itself is never artificially delayed.
   slowTimer = setTimeout(() => {
@@ -156,9 +160,11 @@ async function run(intent, fromHatch) {
     (outcome.status === 400 || outcome.status === 422)
   ) {
     // Invalid input from the hatch: the schema error renders BESIDE the raw
-    // JSON editor (offending field + allowed values), never a toast. The
-    // viewer region keeps its previous state.
+    // JSON editor (offending field + allowed values), never a toast. Restore the
+    // viewer to its pre-request node so it does not stay stuck on the loading
+    // state (the loading swap only applies while the request is in flight).
     if (hatchIssues) hatchIssues.replaceChildren(renderInputIssues(outcome.problem));
+    setRegion(priorRegionNode ?? renderEmptyShell());
     return;
   }
 

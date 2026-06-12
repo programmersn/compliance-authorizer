@@ -31,6 +31,18 @@
  * Pure and deterministic: no clock, no I/O, no randomness, no LLM. Ed25519
  * verification inside the admission gate is itself deterministic, so the same
  * intent bytes + pack always yield the same decision (or the same refusal).
+ *
+ * TRUST MODEL (docs/evaluator-semantics.md §7.5): the scope layer is a
+ * self-asserted CONSTRAINT, never an authorization grant. The combination is
+ * purely SUBTRACTIVE — the pack evaluation is computed with zero reference to
+ * the credential, which is consulted only to possibly APPEND an
+ * AGENT_SCOPE_EXCEEDED deny. A present credential can therefore only narrow a
+ * decision (allow/review → deny) and can NEVER widen one (deny/review → allow).
+ * This is why v0.1 needs no trusted-issuer allowlist and accepts any
+ * self-certifying did:key: a self-issued permissive credential is equivalent to
+ * presenting none, so it confers no privilege and cannot escalate. A future
+ * GRANTING credential (one that widened a decision) would be a different trust
+ * model requiring an issuer policy — v0.1 ships none such.
  */
 import type { Evaluation } from "../rules/evaluator.ts";
 import { evaluate } from "../rules/evaluator.ts";
