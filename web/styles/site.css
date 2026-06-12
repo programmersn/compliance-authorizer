@@ -94,7 +94,7 @@ code { font-family: var(--mono); font-size: 0.85em; background: var(--mono-bg); 
 .picker { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-bottom: 14px; }
 .scenario {
   font-family: var(--sans); text-align: left; cursor: pointer;
-  background: #fff; border: 1px solid var(--rule); border-left: 3px solid var(--green);
+  background: #fff; border: 1px solid var(--rule);
   padding: 12px 14px; min-height: 44px; color: var(--ink);
 }
 .scenario[aria-pressed="true"] { border-color: var(--green); background: var(--notice-bg); }
