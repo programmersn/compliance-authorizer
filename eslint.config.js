@@ -4,7 +4,11 @@ import js from "@eslint/js";
 import tseslint from "typescript-eslint";
 
 export default tseslint.config(
-  { ignores: ["dist/", "coverage/", "node_modules/"] },
+  // Mirror the gitignored runtime/build dirs so `eslint .` never walks into
+  // them. `data/` holds the runtime SQLite evidence store and any local scratch
+  // harness scripts (gitignored); keeping it out of the lint surface means a
+  // stray .mjs there can't produce spurious no-undef failures (DX guard).
+  { ignores: ["dist/", "coverage/", "node_modules/", "data/"] },
   js.configs.recommended,
   ...tseslint.configs.recommendedTypeChecked,
   {
