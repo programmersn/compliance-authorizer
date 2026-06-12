@@ -1,0 +1,61 @@
+/*
+ * Design tokens — DESIGN.md §4 (locked). The single source of truth for every
+ * web surface: consume var(--*) everywhere, never re-declare a hex locally.
+ *
+ * Where the approved mockups disagree with DESIGN.md §4, §4 WINS — e.g. the
+ * evidence-viewer mockup's stray `--deny:#6E1F22` is corrected here to the
+ * inked block (#161412): a DENY is a valid result rendered in ink, never in
+ * a red. Alarm red (--error) is reserved for SYSTEM ERRORS ONLY.
+ *
+ * WCAG 2.2 AA contrast — verified numerically with the WCAG 2.x relative-
+ * luminance formula (small text requires >= 4.5:1), 2026-06-12:
+ *
+ *   --allow     #1F6B3B on --paper #F8F9F5      → 6.16:1  PASS
+ *   --allow     #1F6B3B on white  #FFFFFF       → 6.51:1  PASS
+ *   --ochre-ink #6f3d08 on --paper #F8F9F5      → 8.46:1  PASS
+ *   --ochre-ink #6f3d08 on --ochre-band #EFE6CE → 7.19:1  PASS
+ *   --review    #9C5A12 on --paper              → 5.11:1  PASS (always paired
+ *                 with a glyph + the word + weight — never color alone)
+ *   --muted     #5d6b60 on --paper              → 5.31:1  PASS
+ *   --error     #B00020 on --paper              → 6.93:1  PASS (system errors only)
+ *   --ink       #15201a on --paper              → 15.84:1 PASS
+ *   --paper-on-ink #F4F1EA on --ink-block       → 16.29:1 PASS
+ *   --strip-dim    #cfcabb on --ink-block       → 11.22:1 PASS
+ *   --strip-amber  #e3b169 on --ink-block       → 9.41:1  PASS
+ *   --strip-muted  #a8a293 on --ink-block       → 7.22:1  PASS
+ *   --code-comment #7f8c80 on --ink-block       → 5.22:1  PASS
+ *   --code-green   #7fd1a0 on --ink-block       → 10.09:1 PASS
+ */
+:root {
+  /* ------- DESIGN.md §4 color tokens (verbatim) ------- */
+  /* surfaces */
+  --paper:#F8F9F5;   --ink:#15201a;   --muted:#5d6b60;   --rule:#cfd8cc;
+  --mono-bg:#EEF1E9; --ink-block:#161412;   /* inked DENY block + status strips */
+  /* brand (heritage green — sober, NOT a bright SaaS emerald) */
+  --green:#14452F;
+  /* DECISION SEMANTICS — escalating weight, never color alone */
+  --allow:#1F6B3B;   /* light block + check glyph  (the ONLY semantic use of green) */
+  --review:#9C5A12;  /* amber block + caution glyph (a discipline, not a failure)   */
+  --deny:#161412;    /* heavy INKED block, paper text + slash glyph (a valid result) */
+  /* status / chrome (NOT a decision color) */
+  --ochre:#9C5A12; --ochre-band:#EFE6CE; --ochre-ink:#6f3d08;  /* UNCERTIFIED */
+  --error:#B00020;   /* ALARM RED — reserved for SYSTEM ERRORS ONLY, never a DENY */
+
+  /* ------- non-decision chrome (from the approved mockups) ------- */
+  --notice-bg:#EFF3EC;     /* madhab formal-notice background */
+  --paper-on-ink:#F4F1EA;  /* paper-toned text on the inked block / status strips */
+  --strip-dim:#cfcabb;     /* top status-strip text on --ink-block */
+  --strip-muted:#a8a293;   /* footer strip text on --ink-block */
+  --strip-amber:#e3b169;   /* UNCERTIFIED marker inside the dark strips */
+  --code-comment:#7f8c80;  /* comments in the dev-door code block */
+  --code-green:#7fd1a0;    /* response lines in the dev-door code block */
+  --hatch-dark:#7d4a0e;    /* the darker stripe of the UNCERTIFIED diagonal hatch */
+
+  /* ------- typography (DESIGN.md §4) ------- */
+  /* IBM Plex via the same Google Fonts load as the approved mockups.
+     a11y-max swap: "Atkinson Hyperlegible" may replace Plex Sans for body if
+     field testing shows legibility issues (DESIGN.md §4) — swap it here only. */
+  --serif:"IBM Plex Serif", Georgia, serif;
+  --sans:"IBM Plex Sans", system-ui, sans-serif;   /* system-ui is fallback only, never primary */
+  --mono:"IBM Plex Mono", Consolas, monospace;
+}

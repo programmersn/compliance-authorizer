@@ -28,5 +28,30 @@ export default tseslint.config(
         process: "readonly",
       },
     },
+  },
+  {
+    // W3-4 web surfaces: plain browser ES modules (no bundler, no build step).
+    // Browser globals only — node globals stay OUT so a stray `process`/`Buffer`
+    // in web code is still a lint error.
+    files: ["web/**/*.js"],
+    languageOptions: {
+      globals: {
+        document: "readonly",
+        window: "readonly",
+        fetch: "readonly",
+        navigator: "readonly",
+        crypto: "readonly",
+        setTimeout: "readonly",
+        clearTimeout: "readonly",
+        URL: "readonly",
+        Blob: "readonly",
+        atob: "readonly",
+        btoa: "readonly",
+        TextEncoder: "readonly",
+        TextDecoder: "readonly",
+        AbortController: "readonly",
+        console: "readonly",
+      },
+    },
   }
 );
