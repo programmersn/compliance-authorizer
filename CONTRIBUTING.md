@@ -45,7 +45,7 @@ To change the port or key directory, set `PORT` or `KEYS_DIR` before starting (s
 ## Running the test suite
 
 ```sh
-npm test            # all 218 tests (14 files)
+npm test            # all 379 tests (26 files)
 npm run typecheck   # TypeScript compiler check (no emit)
 npm run lint        # ESLint
 ```
