@@ -1,0 +1,44 @@
+/*
+ * Accessibility baseline (T-D6, DESIGN.md §11 / DR6):
+ *   - visible focus rings on every interactive element (keyboard nav);
+ *   - 44px minimum touch targets (set per-control in site/certificate css;
+ *     the global focus + target rules live here);
+ *   - prefers-reduced-motion honored (motion is functional-only anyway);
+ *   - smooth in-page scrolling only when the user allows motion.
+ */
+
+/* visible focus rings — never remove the outline without a replacement */
+:focus-visible {
+  outline: 2px solid var(--green);
+  outline-offset: 2px;
+}
+/* on dark surfaces the green ring would vanish — use the paper tone there */
+.statusbar :focus-visible,
+.fstrip :focus-visible,
+.codeblk :focus-visible,
+.sheet[data-decision="deny"] .decision :focus-visible {
+  outline-color: var(--paper-on-ink);
+}
+
+/* minimum touch-target backstop for the controls the page creates */
+button, summary, .btn { min-height: 44px; }
+summary { display: flex; align-items: center; }
+
+/* honor prefers-reduced-motion: near-zero motion anyway; kill the rest */
+@media (prefers-reduced-motion: no-preference) {
+  html { scroll-behavior: smooth; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* visually-hidden utility for screen-reader-only text */
+.sr-only {
+  position: absolute; width: 1px; height: 1px;
+  padding: 0; margin: -1px; overflow: hidden;
+  clip-path: inset(50%); white-space: nowrap; border: 0;
+}
