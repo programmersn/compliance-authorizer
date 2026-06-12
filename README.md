@@ -47,7 +47,7 @@ extra field) returns 400 problem+json — error ≠ deny on the verification pat
 authenticity gate so a single exit code covers both properties. The verifier enforces the EXACT
 v0.1 envelope schema and rejects RFC 8785 lone surrogates on both canonicalizers.
 
-**W3-4 — web surfaces + backend remainder: complete.** A single-scroll demo page
+**W3-4 — web surfaces + backend remainder: complete (v0.3.0.0).** A single-scroll demo page
 (`GET /`, served same-origin) carries the decision-first landing, the playground, and the
 **inline evidence viewer** that renders each signed decision in place as a committee-reviewable
 demo certificate (UNCERTIFIED, amber/ochre, never red). The decision path now admits an

@@ -43,39 +43,10 @@ All W2 deliverables shipped in **v0.2.0.0 (2026-06-09)** — see Completed.
       (citation trail in `CHANGELOG.md`).
 
 ## W3-4 — web surfaces + backend completion remainder (boil the lake)
-
-### Design surfaces (build to DESIGN.md + design/ mockups)
-- [ ] T-D1 evidence viewer (match `design/evidence-viewer-chosen.html`)
-- [ ] T-D2 playground + all six interaction states (include a REVIEW scenario)
-- [ ] T-D3 landing (match `design/landing-mockup.html`)
-- [ ] T-D4 design tokens + IBM Plex (verify WCAG AA)
-- [ ] T-D5 scholar-attestation SVG + Mermaid system/data-flow diagrams
-- [ ] T-D6 print stylesheet + a11y baseline
-- [ ] T-D7 3-min demo-video storyboard
-- [ ] T-D8 copy-guard pass (honesty wording; generic public labels)
-
-### Eng-plan parity (restored 2026-06-11 — these were W3-4-tagged in the eng plan but fell out
-of this checklist when W2 closed; no descope was ever decided)
-- [ ] ET16 + ET17 minimal agent-credential verification + two-layer enforcement: verify a
-      presented synthetic signed credential (did:key), enforce its encoded MCC scope ∩ the rule
-      pack (most-restrictive wins); tampered/invalid credential → 4xx problem+json, NEVER a
-      signed deny (error ≠ deny). Tests: valid-scope allow, forbidden-scope deny, tampered-sig
-      reject, two-layer intersection. **Priority:** P1 (test-plan critical path #4)
-- [ ] ET14 remainder — `node:sqlite` evidence store (better-sqlite3 fallback): the W2 routes
-      shipped stateless; the persistence leg never landed. **Priority:** P2
-- [ ] ET18 AGT mapping doc (`docs/agt-mapping.md`) + one example governance YAML; validate
-      against the AGT engine OR word it "schema-mapped, not engine-verified". **Priority:** P2
-- [ ] ET20 scholar-attestation path: did:key detached JWS over `rule_pack_hash` + named-scholar
-      metadata shape; v0.1 ships an "UNCERTIFIED specimen", never a bare null. **Priority:** P3
-
-### DevEx docs not yet shipped
-- [ ] DT1 `docs/machine-contract.md` — the always-200 machine contract: a deny is HTTP 200 (read
-      `body.decision`); deny = halt-no-retry, review = halt-escalate; 4xx = integration failure,
-      never a signed decision. **Priority:** P2
-- [ ] DT2 `docs/reason-codes.md` — closed reason-code reference + actionable problem+json
-      (offending field + allowed values). **Priority:** P2
-- [ ] DT8 `llms.txt` + `AGENTS.md` — agent-facing doc: reading a deny + reason_codes + halting;
-      references the machine contract. **Priority:** P3
+All W3-4 deliverables shipped in **v0.3.0.0 (2026-06-12)** — see Completed. The set: the
+design surfaces (T-D1..T-D8), the eng-plan-parity remainder (ET16+ET17 agent credentials,
+ET14 evidence store, ET18 AGT mapping, ET20 scholar-attestation path), and the DevEx docs
+(DT1 machine contract, DT2 reason codes, DT8 `llms.txt`/`AGENTS.md`).
 
 ## Guards (every task)
 Synthetic data only · no LLM in the decision path · error ≠ deny · UNCERTIFIED unavoidable +
@@ -83,6 +54,40 @@ amber (never red) · generic public labels only (no named institutions) · hones
 forward-projection copy stays future-conditional.
 
 ## Completed
+- [x] Single-scroll web surface (T-D1..T-D4, T-D6): landing + playground + evidence viewer served
+      same-origin from `web/` via `@fastify/static` (`GET /`), vanilla ES modules, no build step;
+      all six interaction states (idle → loading → slow-copy swap → allow / deny / REVIEW
+      certificate, plus the dashed problem-panel and network-error paths — error ≠ deny in the UI),
+      DESIGN.md §4 design tokens (IBM Plex, WCAG AA), print stylesheet + a11y baseline. UNCERTIFIED
+      amber chip + verbatim honesty wording on every rendered decision; a drift guard asserts every
+      hardcoded pack/evaluator/hash and every absolute link answers 200.
+      **Completed:** v0.3.0.0 (2026-06-12)
+- [x] T-D5 / T-D7 / T-D8 design closeout: scholar-attestation SVG + system/data-flow diagrams,
+      the 3-minute demo-video storyboard (`docs/demo-storyboard.md`), and the copy-guard pass
+      (honesty wording verbatim, generic public labels only, forward-projection future-conditional).
+      **Completed:** v0.3.0.0 (2026-06-12)
+- [x] ET16 + ET17 agent-credential two-layer enforcement: `agent_credential` is an OPTIONAL
+      payment-intent field; a presented synthetic signed `did:key` credential
+      (`synthetic-agent-mcc-scope/0.1`, scope `{ allowed_mcc: [<4-digit>] }`) is verified, then its
+      MCC scope ∩ the rule pack is enforced most-restrictive (evaluator bumped to 0.2.0, pack
+      re-versioned `shariah@0.1.1`). A VALID credential whose scope excludes the intent's
+      `merchant.mcc` → signed `deny` carrying the ONE new closed code `AGENT_SCOPE_EXCEEDED`; an
+      invalid / tampered / alg-confused credential → 4xx problem+json, NEVER a signed deny
+      (error ≠ deny). Offline replay parity proven. **Completed:** v0.3.0.0 (2026-06-12)
+- [x] ET14 remainder — `node:sqlite` evidence store (better-sqlite3 fallback) wired on
+      `POST /authorize`: signed envelopes persist (schema + round-trip + duplicate-rejection +
+      fail-closed tested); the W2 routes shipped stateless. **Completed:** v0.3.0.0 (2026-06-12)
+- [x] ET18 AGT mapping (`docs/agt-mapping.md`) + example governance YAML
+      (`examples/agt-example.governance.yaml`), worded schema-mapped (not engine-verified).
+      **Completed:** v0.3.0.0 (2026-06-12)
+- [x] ET20 scholar-attestation path (`src/scholar/`): did:key detached JWS over `rule_pack_hash`
+      + named-scholar metadata shape; v0.1 ships an UNCERTIFIED specimen
+      (`examples/scholar-attestation.specimen.json`, fully synthetic labels), never a bare null.
+      **Completed:** v0.3.0.0 (2026-06-12)
+- [x] DevEx docs DT1 / DT2 / DT8: `docs/machine-contract.md` (the normative always-200 reference —
+      a deny is HTTP 200, 4xx is never a signed decision), `docs/reason-codes.md` (closed
+      reason-code reference + actionable problem+json), and `llms.txt` + `AGENTS.md` (agent-facing:
+      reading a deny + reason_codes + halting). **Completed:** v0.3.0.0 (2026-06-12)
 - [x] always-200 verification contract + `GET /.well-known/jwks.json` (all historical keys) +
       `GET /rule-packs/:id/:version` + `POST /verify` (server surface reuses the offline verifier;
       `valid:false` is a 200 verdict, malformed is 400 problem+json)

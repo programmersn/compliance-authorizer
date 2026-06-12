@@ -3,9 +3,76 @@
 All notable changes to this project are documented in this file.
 Versions follow a 4-digit MAJOR.MINOR.PATCH.MICRO scheme; dates are YYYY-MM-DD.
 
-## [0.2.1.0] - 2026-06-11
+## [0.3.0.0] - 2026-06-12
 
-Deferred hardening from the v0.2.0.0 cross-vendor review. The three schema/canonicalization
+The W3-4 wave: the human- and agent-facing surfaces over the W1/W2 decision core. A single-scroll
+web page (landing + playground + evidence viewer) now renders any decision as an audit exhibit
+rather than raw JSON, the decision path gains an optional agent-credential layer, signed envelopes
+persist to a local evidence store, and the scholar-attestation path ships as a structural specimen.
+The UNCERTIFIED marker is unavoidable on every rendered decision (amber, never red — a deny is a
+valid result, not a system error), the honesty wording is verbatim (synthetic demo rule pack — not
+a fatwa / not certified / not production advice; evidence is "committee-reviewable", never
+"board-readable"), all public scenario labels stay generic (casino-hotel, mixed-revenue ETF,
+subscription), and every forward-looking note stays future-conditional (a certified v1.0 *would*
+carry a real scholar's signature; this release does not). No LLM enters the decision path; same
+intent + same `rule_pack_hash` still yields the same decision.
+
+### Added
+
+- Single-scroll web surface served same-origin from `web/` via `@fastify/static` (`GET /` →
+  `web/index.html`): a landing section, an interactive playground, and the evidence viewer, built
+  as a decision-certificate / audit exhibit (DESIGN.md), not a SaaS dashboard. Vanilla ES modules,
+  no build step or framework. All six interaction states are reachable — idle (ghosted empty
+  certificate) → loading (with a slow-copy swap past ~2s, no artificial delay) → an inline
+  allow / deny / REVIEW certificate — plus the two failure paths: a schema error renders beside the
+  raw-JSON editor (offending field + allowed values) and an integration failure renders as a
+  distinct DASHED problem panel. A failure is NEVER a decision certificate (error ≠ deny in the UI).
+  A pre-canned REVIEW scenario (mixed-revenue ETF) gives REVIEW its first-class amber treatment, not
+  a grey "couldn't decide". DENY is an inked block, REVIEW is amber/ochre; red (#B00020) is reserved
+  for system errors only.
+- DESIGN.md §4 design tokens (`web/styles/tokens.css`, IBM Plex), a print stylesheet that renders
+  the certificate as a clean committee paper-trail page, and an accessibility baseline (semantic
+  landmarks, focus states, WCAG 2.2 AA contrast on the allow/ochre tokens).
+- Agent-credential two-layer enforcement (`src/vc/`): `agent_credential` is now an OPTIONAL field
+  on the payment intent. When present, a synthetic signed `did:key` credential
+  (`credential_type` `synthetic-agent-mcc-scope/0.1`, scope shape `{ allowed_mcc: [<4-digit MCC>] }`)
+  is verified, then enforced against the rule pack most-restrictive: a VALID credential whose
+  allowed-MCC scope excludes the intent's `merchant.mcc` produces a signed `deny` carrying the one
+  new closed reason code `AGENT_SCOPE_EXCEEDED` (appended to any pack codes; e.g. an out-of-scope
+  intent that is also `MAYSIR` denies with `["MAYSIR","AGENT_SCOPE_EXCEEDED"]`). The evaluator is
+  pinned to `0.2.0` for this added scope layer and the rule pack is re-versioned `shariah@0.1.1`
+  (pinning evaluator `0.2.0`); the bundled `examples/` were regenerated against it and the offline
+  verifier + replay tools reproduce these decisions byte-for-byte.
+- Local evidence store (ET14 remainder, `src/store/`): `POST /authorize` now persists each signed
+  envelope to a `node:sqlite` store (better-sqlite3 fallback). Idempotent on the decision id;
+  duplicate insertion is rejected; a store failure fails closed and surfaces as an integration
+  error, never a corrupted or unsigned decision.
+- Scholar-attestation path (ET20, `src/scholar/`): a did:key detached JWS over the `rule_pack_hash`
+  plus a named-scholar metadata shape, shipped as an UNCERTIFIED structural specimen
+  (`examples/scholar-attestation.specimen.json`) with fully synthetic labels — never a bare null. A
+  certified v1.0 pack *would* carry a real scholar's did:key and a detached signature over the
+  pack's hash in this exact shape; this release ships only the synthetic specimen.
+- Agent- and machine-facing docs: `docs/machine-contract.md` (the normative always-200 reference —
+  a deny is HTTP 200, read `body.decision`; deny = halt-no-retry, review = halt-escalate; a 4xx is
+  an integration failure, never a signed decision), `docs/reason-codes.md` (the closed reason-code
+  reference + the actionable problem+json contract), `docs/agt-mapping.md` + an example governance
+  YAML (`examples/agt-example.governance.yaml`, schema-mapped, not engine-verified),
+  `docs/demo-storyboard.md` (the 3-minute demo storyboard), and `llms.txt` + `AGENTS.md` for
+  agent consumption. The web dev-door links GitHub, `REPRODUCIBILITY.md`,
+  `docs/machine-contract.md`, `/.well-known/jwks.json`, and the served rule pack; there is no
+  OpenAPI route in this codebase.
+
+### Security
+
+- Invalid, tampered, or algorithm-confused agent credentials are rejected as RFC 9457 problem+json
+  (4xx), never folded into a signed deny — the credential layer holds the same error ≠ deny boundary
+  as the rest of the engine. Only a cryptographically VALID credential that is genuinely out of
+  scope produces a signed `deny` (`AGENT_SCOPE_EXCEEDED`); a broken credential is an integration
+  failure, so a forged credential can never be laundered into a citable decision artifact.
+- The served web surface hardcodes the shipped pack (`shariah@0.1.1`), evaluator (`0.2.0`), and the
+  current `rule_pack_hash` in its hero specimen, dev-door, and footer; a static drift guard asserts
+  these match the engine and that every absolute link the page advertises answers 200, so the
+  public surface cannot silently fall out of sync with the decision core. The three schema/canonicalization
 items are key-holder-only robustness (a signed-but-malformed artifact is only producible by the
 issuer, not an outsider-reachable hole), cleared before the W3 web surfaces so the viewer renders
 against a strict, RFC-defensible verifier contract. A pre-merge cross-model review of this work

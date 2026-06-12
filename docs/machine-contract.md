@@ -24,7 +24,7 @@ questions are never collapsed into one channel.
 > carries an explicit `uncertified` slot in their place.
 
 All examples below are **real request/response pairs captured from a running
-server** (`npm run dev`, v0.2.1.0, Shariah v0.1 demo pack `shariah@0.1.1`).
+server** (`npm run dev`, v0.3.0.0, Shariah v0.1 demo pack `shariah@0.1.1`).
 Hashes, ids, and signatures are genuine; only long JWS strings are elided where
 marked.
 
