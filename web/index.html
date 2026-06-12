@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Runtime Compliance Authorization — signed allow / deny / review decisions (UNCERTIFIED synthetic demo)</title>
+<meta name="description" content="Runtime compliance authorization for agentic payments: a signed, offline-verifiable allow / deny / review decision per payment intent. Uncertified synthetic demo rule pack — not a fatwa / not certified / not production advice.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Serif:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles/tokens.css">
+<link rel="stylesheet" href="styles/site.css">
+<link rel="stylesheet" href="styles/certificate.css">
+<link rel="stylesheet" href="styles/a11y.css">
+<link rel="stylesheet" href="styles/print.css" media="print">
+</head>
+<body>
+  <!-- top status strip (mono chrome — UNCERTIFIED stays visible from the first paint) -->
+  <div class="statusbar">
+    <span>RUNTIME COMPLIANCE AUTHORIZATION · SHARIAH PROFILE v0.1</span>
+    <span class="u">● UNCERTIFIED SYNTHETIC DEMO — NOT A FATWA</span>
+  </div>
+
+  <nav class="nav" aria-label="Page">
+    <div class="brand"><span class="seal" aria-hidden="true">۞</span> Runtime Compliance Authorization</div>
+    <div class="links">
+      <a href="#how">How it works</a>
+      <a href="#playground">Playground</a>
+      <a href="#verify">Verify</a>
+      <a href="#dev">For developers</a>
+      <a href="https://github.com/programmersn/compliance-authorizer">GitHub ↗</a>
+    </div>
+  </nav>
+
+  <!-- 1 · decision-first hero (DESIGN.md §7, B direction) -->
+  <header class="hero">
+    <div>
+      <h1>See exactly why an AI agent's payment was allowed, denied, or held.</h1>
+      <div class="hrule" aria-hidden="true"></div>
+      <p class="sub">A runtime authorization API that returns a cited, tamper-evident decision your Shariah committee can read — and that anyone can verify offline, trusting nothing on our server.</p>
+      <div class="cta">
+        <a class="btn primary" href="#playground">Try a decision</a>
+        <a class="btn ghost" href="#evidence-region">View signed evidence</a>
+      </div>
+      <div class="honest">uncertified · synthetic demo rule pack · not a fatwa / not certified / not production advice</div>
+    </div>
+    <aside class="cert" aria-label="Example signed decision (illustrative specimen)">
+      <div class="band"><i>Uncertified — synthetic demo rule pack</i></div>
+      <div class="ch"><span class="t">Decision · Evidence Record</span><span class="id">ev-7f3c8a21</span></div>
+      <div class="dec">
+        <div class="g" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><circle cx="12" cy="12" r="9"/><line x1="6.4" y1="6.4" x2="17.6" y2="17.6"/></svg></div>
+        <div><div class="dl">DENY</div><div class="dr">MAYSIR — gambling</div></div>
+      </div>
+      <div class="meta">
+        <span>MAYSIR-ATTR · shariah-v0.1 · pack 0.1.1</span>
+        <span>sha256:5573ec…522ab4</span>
+        <span class="ok">✓ signature valid · ✓ hash matches · ✓ replay OK</span>
+      </div>
+      <div class="cert-caption">illustrative specimen — run a live decision in the playground below</div>
+    </aside>
+  </header>
+
+  <!-- ruled three-step flow (NOT an icon-card grid) -->
+  <section class="flow" id="how">
+    <h2>One runtime decision, three steps</h2>
+    <div class="steps">
+      <div class="step"><div class="n">01</div><h3>Payment intent</h3><p>An agent presents a synthetic intent — merchant, MCC, amount, screening data.</p></div>
+      <div class="arrow" aria-hidden="true">→</div>
+      <div class="step"><div class="n">02</div><h3>Rule pack evaluates</h3><p>A versioned, hashed Shariah rule pack decides — deterministically, no LLM.</p></div>
+      <div class="arrow" aria-hidden="true">→</div>
+      <div class="step"><div class="n">03</div><h3>Signed decision + evidence</h3><p>An Ed25519-signed envelope: allow / deny / review, cited and replayable.</p></div>
+    </div>
+  </section>
+
+  <!-- forward-projection strip (DR3 — stays future-conditional) -->
+  <p class="project" id="verify"><b>This demo runs an uncertified synthetic rule pack.</b> It shows the exact evidence shape a certified v1.0 pack produces — the AAOIFI citation and scholar signature populate on certification. Every decision is verifiable offline, so you trust the math, not us.</p>
+
+  <!-- 2 · playground (DESIGN.md §6) — calls the real POST /authorize same-origin -->
+  <section class="playground" id="playground">
+    <div class="playground-inner">
+      <h2 class="section-name">Playground — try a live decision</h2>
+      <p class="playground-sub">Three synthetic scenarios call the real <code>POST /authorize</code> on this server. The decision and its signed evidence render below as committee-reviewable demo evidence — uncertified.</p>
+
+      <div class="picker" id="scenario-picker" role="group" aria-label="Pick a scenario">
+        <noscript><p class="noscript-note">The playground needs JavaScript. The API itself does not — use the curl call in the developer door below.</p></noscript>
+      </div>
+
+      <details class="hatch">
+        <summary>Advanced / unsupported — raw intent JSON</summary>
+        <p class="hatch-note">Edit the raw payment intent and send it as-is. Schema errors come back as 400 problem+json and render here — they are integration failures, never decisions, and nothing is signed.</p>
+        <div class="hatch-grid">
+          <div class="hatch-editor">
+            <label class="hatch-label" for="hatch-input">Payment intent (JSON)</label>
+            <textarea id="hatch-input" spellcheck="false" rows="14">{
+  "profile": "shariah-v0.1",
+  "merchant": {
+    "name": "casino-hotel",
+    "mcc": "7011",
+    "attributes": ["casino", "gambling"]
+  },
+  "amount": { "value": 420, "currency": "EUR" }
+}</textarea>
+            <button type="button" class="btn primary hatch-send" id="hatch-send">Send raw intent</button>
+          </div>
+          <div class="hatch-issues" id="hatch-issues" aria-live="polite"></div>
+        </div>
+      </details>
+
+      <!-- 3 · the evidence viewer renders INLINE directly below the picker (DR1 — no modal, no route change) -->
+      <div class="workspace">
+        <div class="evidence-region" id="evidence-region" aria-live="polite">
+          <!-- initial state: the empty certificate shell (ghosted outline, never a blank panel).
+               Kept structurally identical to renderEmptyShell() in js/render.js. -->
+          <article class="sheet sheet--empty" aria-label="No decision yet">
+            <div class="uncert"><div class="uncert-inner">
+              <b>Uncertified — synthetic demo rule pack</b>
+              <span>Not a fatwa · not certified · not production advice</span>
+            </div></div>
+            <div class="ghost-body">
+              <div class="ghost-decision">
+                <div class="ghost-glyph" aria-hidden="true"></div>
+                <div class="ghost-lines" aria-hidden="true"><div class="ghost-line w60"></div><div class="ghost-line w40"></div></div>
+              </div>
+              <p class="empty-msg">Pick a scenario to see a signed decision.</p>
+              <div class="ghost-table" aria-hidden="true"><div class="ghost-line"></div><div class="ghost-line w80"></div><div class="ghost-line w70"></div></div>
+            </div>
+          </article>
+        </div>
+
+        <!-- the four state specimens (approved viewer mockup) -->
+        <aside class="legend" aria-label="Decision states">
+          <h2>Decision states</h2>
+          <p>Escalating visual weight, icon + word always — never color alone.</p>
+          <div class="state st-allow">
+            <div class="g" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="M5 12.5l4.2 4.2L19 7"/></svg></div>
+            <div><div class="nm">ALLOW</div><div class="ds">Permitted. Light, green check. The one semantic use of green.</div></div>
+          </div>
+          <div class="state st-review">
+            <div class="g" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><circle cx="12" cy="12" r="9"/><line x1="12" y1="7.5" x2="12" y2="13"/><circle cx="12" cy="16.6" r="1.1" fill="currentColor" stroke="none"/></svg></div>
+            <div><div class="nm">REVIEW</div><div class="ds">Halt, escalate to your committee. Amber, not grey — a discipline, not a failure.</div></div>
+          </div>
+          <div class="state st-deny">
+            <div class="g" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><circle cx="12" cy="12" r="9"/><line x1="6.4" y1="6.4" x2="17.6" y2="17.6"/></svg></div>
+            <div><div class="nm">DENY</div><div class="ds">Prohibited. Heavy inked block + slash. A valid result, not an error.</div></div>
+          </div>
+          <div class="state st-error">
+            <div class="g" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 4 L21 19 H3 Z"/><line x1="12" y1="10" x2="12" y2="14"/><circle cx="12" cy="16.6" r="1.1" fill="currentColor" stroke="none"/></svg></div>
+            <div><div class="nm">SYSTEM ERROR</div><div class="ds"><b>Not a decision.</b> Dashed panel, never a certificate. Unsigned 4xx — no envelope exists.</div></div>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </section>
+
+  <!-- 4 · developer door, below the fold (DESIGN.md §7 + DT1/DX9 HTTP contract) -->
+  <section class="dev" id="dev">
+    <div class="devin">
+      <div>
+        <h2>For developers &amp; bank validators</h2>
+        <p>One command to a signed decision. Reproduce any envelope offline, trusting nothing on our server. MIT-licensed, with a written machine contract — agent-native by construction.</p>
+        <ul class="contract" aria-label="HTTP contract">
+          <li>A decision is <b>always HTTP 200</b> — a DENY is 200; read <code>body.decision</code>, never the status code.</li>
+          <li>Malformed input is <b>4xx problem+json</b> — an integration failure, never a signed decision.</li>
+        </ul>
+        <div class="links2">
+          <a href="https://github.com/programmersn/compliance-authorizer">MIT on GitHub ↗</a>
+          <a href="https://github.com/programmersn/compliance-authorizer/blob/main/REPRODUCIBILITY.md">Verify offline (REPRODUCIBILITY.md) ↗</a>
+          <a href="https://github.com/programmersn/compliance-authorizer/blob/main/docs/machine-contract.md">Machine contract (always-200) ↗</a>
+          <a href="/.well-known/jwks.json">Issuer keys (jwks.json)</a>
+          <a href="/rule-packs/shariah/0.1.1">Rule pack (canonical bytes)</a>
+        </div>
+      </div>
+      <div>
+        <div class="codeblk" aria-label="HTTP contract example"><span class="c"># a decision is ALWAYS 200 — read the body (a DENY is 200, not an error)</span>
+$ curl -s localhost:8787/authorize -H 'content-type: application/json' -d @casino-hotel.json
+<span class="g">{ "decision": "deny", "reason_codes": ["MAYSIR"],</span>
+<span class="g">  "rule_pack_hash": "5573ec…", "evidence_artifact": "eyJh…", … }</span>
+
+<span class="c"># malformed input → 4xx problem+json — never a signed decision</span>
+$ curl -s localhost:8787/authorize -H 'content-type: application/json' -d '{"profile":"shariah-v0.1"}'
+<span class="g">{ "status": 400, "title": "Request body failed schema validation", "issues": […] }</span>
+
+<span class="c"># verify any envelope offline — node built-ins only, zero server trust</span>
+$ node verifier/verify.mjs --evidence decision.jws --jwks jwks.json
+<span class="g">RESULT: PASS</span></div>
+        <p class="codenote">The raw casino-hotel intent JSON is in the playground's advanced hatch above.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- footer status strip -->
+  <div class="fstrip">
+    <span>ENGINE compliance-authorizer · EVALUATOR 0.2.0 · RULESET shariah-v0.1 @ 0.1.1 · LICENSE MIT</span>
+    <span class="u">JURISDICTION demo · UNCERTIFIED · committee-reviewable demo evidence</span>
+  </div>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

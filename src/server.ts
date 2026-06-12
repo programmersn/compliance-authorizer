@@ -1,3 +1,6 @@
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import fastifyStatic from "@fastify/static";
 import Fastify, { type FastifyInstance } from "fastify";
 import { assertPublishableJwk } from "./crypto/keys.ts";
 import type { PublicJwk, SigningKey } from "./crypto/keys.ts";
@@ -137,6 +140,15 @@ export function buildServer(options: ServerOptions): FastifyInstance {
   void app.register(jwksRoute, { publishedKeys: publishedSnapshot });
   void app.register(rulePacksRoute, { packsByIdVersion });
   void app.register(verifyRoute, { publishedKeys: publishedSnapshot, packsByIdVersion });
+
+  // W3-4 web surfaces: serve web/ same-origin (GET / → web/index.html) so the
+  // playground calls the real POST /authorize with no CORS and no build step.
+  // GET-only static routes; the API routes above take precedence over the
+  // static wildcard, and a static miss falls through to the problem+json 404
+  // handler — web serving never weakens the API's error contract.
+  void app.register(fastifyStatic, {
+    root: join(dirname(fileURLToPath(import.meta.url)), "..", "web"),
+  });
 
   return app;
 }
