@@ -67,10 +67,10 @@ contract):
       "standards_ref": { "status": "pending", "note": "pending — populated on v1.0 certification" }
     }
   ],
-  "decision_id": "ev-643017ef-bc22-4acb-adb1-ae8f22dc7c4e",
+  "decision_id": "ev-03e70853-30d1-47a0-995f-3a5a47108ca9",
   "rule_pack_id": "shariah",
-  "rule_pack_version": "0.1.0",
-  "rule_pack_hash": "37b90be117e0e5d2f15c815505761661d36a4ddb84eea9f9c544fec3beddb0eb",
+  "rule_pack_version": "0.1.1",
+  "rule_pack_hash": "5573ec7e039e8f882a5a8d253f901dbb29951442bace5a42353be5da50522ab4",
   "rule_pack_status": "uncertified",
   "evidence_artifact": "eyJhbGciOiJFZERTQSIsImtpZCI6…(JWS-compact)"
 }

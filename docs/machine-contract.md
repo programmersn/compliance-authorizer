@@ -24,8 +24,9 @@ questions are never collapsed into one channel.
 > carries an explicit `uncertified` slot in their place.
 
 All examples below are **real request/response pairs captured from a running
-server** (`npm run dev`, v0.2.1.0, Shariah v0.1 demo pack). Hashes, ids, and
-signatures are genuine; only long JWS strings are elided where marked.
+server** (`npm run dev`, v0.2.1.0, Shariah v0.1 demo pack `shariah@0.1.1`).
+Hashes, ids, and signatures are genuine; only long JWS strings are elided where
+marked.
 
 ---
 
@@ -81,13 +82,13 @@ Real response — **status `200`**, content type `application/json`:
       }
     }
   ],
-  "decision_id": "ev-643017ef-bc22-4acb-adb1-ae8f22dc7c4e",
-  "decision_timestamp": "2026-06-12T08:29:50.223Z",
+  "decision_id": "ev-03e70853-30d1-47a0-995f-3a5a47108ca9",
+  "decision_timestamp": "2026-06-12T14:09:00.528Z",
   "rule_pack_id": "shariah",
-  "rule_pack_version": "0.1.0",
-  "rule_pack_hash": "37b90be117e0e5d2f15c815505761661d36a4ddb84eea9f9c544fec3beddb0eb",
+  "rule_pack_version": "0.1.1",
+  "rule_pack_hash": "5573ec7e039e8f882a5a8d253f901dbb29951442bace5a42353be5da50522ab4",
   "rule_pack_status": "uncertified",
-  "evaluator_version": "0.1.0",
+  "evaluator_version": "0.2.0",
   "intent_hash": "9cc65d49e4ac6df696f26b41a95c8465f3556228eb249c54634980a5dc682c31",
   "envelope_version": "0.1.0",
   "evidence_artifact": "eyJhbGciOiJFZERTQSIsImtpZCI6ImhUVDVvemlCVThLcGN2MVdVaDlpdFp3cmQwYzd6SXF2UW5hcXR5Y0xBUzQifQ.eyJkZWNpc2lvbiI6ImRlbnkiLCJkZWNpc2lvbl9pZCI6… (JWS-compact, elided)"
@@ -140,13 +141,13 @@ Real response (status `200`; `evidence_artifact` elided):
       }
     }
   ],
-  "decision_id": "ev-5c4aa9e1-1a4b-426c-991b-e22f7a91d204",
-  "decision_timestamp": "2026-06-12T08:30:29.319Z",
+  "decision_id": "ev-a6412fcb-77f2-401d-928c-d1d36c037208",
+  "decision_timestamp": "2026-06-12T14:09:01.025Z",
   "rule_pack_id": "shariah",
-  "rule_pack_version": "0.1.0",
-  "rule_pack_hash": "37b90be117e0e5d2f15c815505761661d36a4ddb84eea9f9c544fec3beddb0eb",
+  "rule_pack_version": "0.1.1",
+  "rule_pack_hash": "5573ec7e039e8f882a5a8d253f901dbb29951442bace5a42353be5da50522ab4",
   "rule_pack_status": "uncertified",
-  "evaluator_version": "0.1.0",
+  "evaluator_version": "0.2.0",
   "intent_hash": "8a3e852358e8b3864b8d51210cdbb14fcc6472518003cda127bb59b07267e24e",
   "envelope_version": "0.1.0",
   "evidence_artifact": "… (JWS-compact, elided)"

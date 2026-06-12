@@ -54,11 +54,11 @@ spec:
       # Authoritative compliance content, referenced by content address only.
       rulePackRef:
         id: shariah
-        version: 0.1.0
-        sha256: 37b90be117e0e5d2f15c815505761661d36a4ddb84eea9f9c544fec3beddb0eb
+        version: 0.1.1
+        sha256: 5573ec7e039e8f882a5a8d253f901dbb29951442bace5a42353be5da50522ab4
         status: uncertified
-        servedAt: /rule-packs/shariah/0.1.0 # exact RFC 8785 canonical bytes
-        evaluatorVersion: 0.1.0
+        servedAt: /rule-packs/shariah/0.1.1 # exact RFC 8785 canonical bytes
+        evaluatorVersion: 0.2.0
         scholarAttestation:
           # v0.1 ships a labeled UNCERTIFIED specimen, never a bare null.
           status: uncertified

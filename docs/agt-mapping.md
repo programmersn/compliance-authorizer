@@ -75,7 +75,7 @@ projects exactly the three generic demo scenarios onto the shape above:
 | agent sets up a subscription | `allow`, `reason_codes: []` | `permit` |
 
 The decisions and the `rule_pack_hash`
-(`37b90be117e0e5d2f15c815505761661d36a4ddb84eea9f9c544fec3beddb0eb`) in the
+(`5573ec7e039e8f882a5a8d253f901dbb29951442bace5a42353be5da50522ab4`) in the
 YAML were captured from a running instance of this service — that half is
 execution-verified. The **AGT-side field names are not** (see the label at the
 top): treat the YAML as a schema-mapped illustration to adapt, not a document
