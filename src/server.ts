@@ -11,6 +11,7 @@ import { jwksRoute } from "./routes/jwks.ts";
 import { rulePacksRoute } from "./routes/rule-packs.ts";
 import { verifyRoute } from "./routes/verify.ts";
 import type { LoadedRulePack } from "./rules/loader.ts";
+import type { EvidenceStore } from "./store/evidence-store.ts";
 
 export interface ServerOptions {
   loadedPacks: readonly LoadedRulePack[];
@@ -24,6 +25,15 @@ export interface ServerOptions {
    */
   publishedKeys?: readonly PublicJwk[];
   envelopeDeps?: EnvelopeDeps;
+  /**
+   * OPTIONAL evidence store (ET14). When provided, POST /authorize persists one
+   * row per issued decision after signing. DEFAULT is undefined — the server runs
+   * stateless and every existing caller (and the in-repo tests) is unchanged.
+   * Persistence is observational: it never alters the response, the envelope
+   * bytes, or determinism. A write failure fails the request closed (500
+   * problem+json, no envelope).
+   */
+  store?: EvidenceStore;
   logger?: boolean;
 }
 
@@ -133,6 +143,7 @@ export function buildServer(options: ServerOptions): FastifyInstance {
     packsByProfile,
     signingKey: options.signingKey,
     ...(options.envelopeDeps ? { envelopeDeps: options.envelopeDeps } : {}),
+    ...(options.store ? { store: options.store } : {}),
   });
 
   // W2 routes — pre-wired here so the fan-out implementers inherit a stable

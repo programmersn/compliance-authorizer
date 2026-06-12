@@ -21,6 +21,7 @@ import type { SigningKey } from "../crypto/keys.ts";
 import type { Evaluation, MatchedRule } from "../rules/evaluator.ts";
 import type { LoadedRulePack } from "../rules/loader.ts";
 import { PROBLEM_TYPE_BASE, ProblemError } from "../http/problem.ts";
+import type { EvidenceStore } from "../store/evidence-store.ts";
 import { decideIntent } from "../vc/enforce.ts";
 import { AgentCredentialError } from "../vc/verify.ts";
 
@@ -128,6 +129,14 @@ export interface AuthorizeRouteOptions {
   packsByProfile: ReadonlyMap<string, LoadedRulePack>;
   signingKey: SigningKey;
   envelopeDeps?: EnvelopeDeps;
+  /**
+   * OPTIONAL evidence store (ET14). When present, every ISSUED decision is
+   * persisted AFTER signing and BEFORE the body is returned. Absent, the route
+   * is stateless and behaves identically — storage is observational, never part
+   * of the decision. A persist FAILURE fails the request closed (see the hook
+   * below): no signed envelope reaches the caller alongside a storage error.
+   */
+  store?: EvidenceStore;
 }
 
 export const authorizeRoute: FastifyPluginAsync<AuthorizeRouteOptions> = (
@@ -207,6 +216,45 @@ export const authorizeRoute: FastifyPluginAsync<AuthorizeRouteOptions> = (
           );
         }
         throw error;
+      }
+
+      // error ≠ deny at the STORAGE boundary (ET14). Persist the issued decision
+      // AFTER signing and BEFORE returning the body, so a write failure fails the
+      // request CLOSED — a signed envelope must NEVER reach the caller alongside a
+      // storage error. A thrown store error becomes a 500 problem+json (no
+      // envelope, no decision in the body), exactly like every other integration
+      // failure. Storage is observational: it cannot change `envelope`/the JWS
+      // bytes, only whether the request succeeds. With no store wired this hook is
+      // skipped and the route is stateless. (A duplicate decision_id — astronomically
+      // unlikely with a v4 UUID — surfaces here as a UNIQUE-constraint throw and is
+      // treated the same: fail closed, never serve a half-persisted decision.)
+      if (options.store) {
+        try {
+          options.store.persist({
+            decision_id: envelope.decision_id,
+            decision: envelope.decision,
+            reason_codes: envelope.reason_codes,
+            rule_pack_id: envelope.rule_pack_id,
+            rule_pack_version: envelope.rule_pack_version,
+            rule_pack_hash: envelope.rule_pack_hash,
+            evaluator_version: envelope.evaluator_version,
+            intent_hash: envelope.intent_hash,
+            envelope_version: envelope.envelope_version,
+            decision_timestamp: envelope.decision_timestamp,
+            evidence_artifact: evidenceArtifact,
+          });
+        } catch (error) {
+          // Fail closed: surface a generic 500 problem+json and let nothing
+          // signed escape. We deliberately do NOT include the freshly-signed
+          // envelope anywhere in this branch.
+          request.log.error(error, "evidence store persist failed");
+          throw new ProblemError(
+            500,
+            "Internal error",
+            "The decision was made but could not be persisted to the evidence store. No decision was made and no evidence envelope exists for this request.",
+            "about:blank",
+          );
+        }
       }
 
       // A decision — ANY decision, including deny — is HTTP 200.
