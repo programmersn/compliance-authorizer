@@ -1,0 +1,16 @@
+{
+  "status": "uncertified",
+  "statement": "synthetic demo rule pack — not a fatwa / not certified / not production advice. This is a structural specimen of the scholar-attestation path; a certified v1.0 pack would carry a real scholar's did:key and a detached signature over this rule pack's hash in this shape.",
+  "attestation": {
+    "attestation_type": "synthetic-scholar-attestation/0.1",
+    "scholar_did": "did:key:z6Mkqmu1w9pmYQcLsJ3EVKntvZzbUBvmmog91Q4nz3HbDQsj",
+    "rule_pack_hash": "5573ec7e039e8f882a5a8d253f901dbb29951442bace5a42353be5da50522ab4",
+    "metadata": {
+      "name": "Synthetic Demo Scholar — not a real person",
+      "body": "Synthetic Demo Review Committee — not a real certifying body",
+      "role": "synthetic demo committee member (illustrative only)",
+      "date": "2026-01-01"
+    },
+    "signature": "eyJhbGciOiJFZERTQSIsImtpZCI6ImRpZDprZXk6ejZNa3FtdTF3OXBtWVFjTHNKM0VWS250dlp6YlVCdm1tb2c5MVE0bnozSGJEUXNqIn0..3e3E9h-N8e16yDURbZD2P4wwrV2sJb2gEoGMKXG96OMfxIE-XvRy_kAcFAmKJyMWgCj5tLrWeUeulXOHO8fpAw"
+  }
+}
