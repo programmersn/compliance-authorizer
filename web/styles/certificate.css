@@ -1,0 +1,140 @@
+/*
+ * The decision certificate (DESIGN.md §5, per design/evidence-viewer-chosen.html)
+ * + the playground interaction states (DESIGN.md §6).
+ *
+ * Two artifact types, structurally distinct (error ≠ deny):
+ *   - a DECISION renders as <article class="sheet"> — the signed certificate;
+ *   - an INTEGRATION FAILURE renders as <aside class="problem-panel"> — a DASHED
+ *     panel, never a certificate, alarm-red allowed HERE only.
+ */
+
+/* ---------- the certificate sheet ---------- */
+.sheet { position: relative; background: var(--paper); border: 1px solid var(--rule); }
+
+/* faint diagonal watermark — clipped by its own wrapper so the UNCERTIFIED band
+   can stay position:sticky on the sheet itself */
+.sheet .watermark { position: absolute; inset: 0; overflow: hidden; pointer-events: none; z-index: 0; }
+.sheet .watermark::after {
+  content: "COMMITTEE-REVIEWABLE DEMO EVIDENCE · COMMITTEE-REVIEWABLE DEMO EVIDENCE";
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  transform: rotate(-31deg); font-family: var(--mono); font-size: 18px; letter-spacing: .2em;
+  white-space: nowrap; color: var(--ink); opacity: .045;
+}
+.sheet > * { position: relative; z-index: 1; }
+
+/* UNCERTIFIED hatch band — persistent, non-dismissible, STICKY while the
+   certificate scrolls (DX11: unavoidable). Amber/ochre, never red. */
+.sheet .uncert {
+  position: sticky; top: 0; z-index: 2;
+  background: repeating-linear-gradient(45deg, var(--ochre) 0 8px, var(--hatch-dark) 8px 16px);
+  padding: 3px;
+}
+.sheet .uncert-inner { background: var(--ochre-band); color: var(--ochre-ink); padding: 8px 14px; text-align: center; }
+.sheet .uncert-inner b { font-size: 13px; letter-spacing: .05em; display: block; text-transform: uppercase; font-weight: 600; }
+.sheet .uncert-inner span { font-size: 12.5px; opacity: .92; }
+
+/* forward projection (DR3 — future-conditional) */
+.sheet .project-line { padding: 8px 20px 0; font-size: 12.5px; color: var(--muted); font-style: italic; margin: 0; }
+
+/* certificate head */
+.sheet .chead { padding: 11px 20px 12px; border-bottom: 2px solid var(--green); display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }
+.sheet .chead .t { font-family: var(--serif); font-weight: 600; font-size: 17px; line-height: 1.25; color: var(--green); }
+.sheet .chead .sub { font-family: var(--mono); font-size: 10.5px; color: var(--muted); margin-top: 4px; word-break: break-all; }
+.sheet .chip { font-family: var(--mono); font-size: 10px; font-weight: 500; letter-spacing: .05em; border: 1px solid var(--ochre); color: var(--ochre-ink); background: var(--ochre-band); padding: 3px 7px; white-space: nowrap; text-transform: uppercase; align-self: flex-start; }
+
+/* ---------- decision block — escalating weight, never color alone ---------- */
+.sheet .decision { display: flex; gap: 15px; align-items: center; padding: 20px; border-bottom: 1px solid var(--rule); }
+.sheet .glyph { flex: 0 0 auto; width: 48px; height: 48px; display: grid; place-items: center; border: 2.5px solid currentColor; }
+.sheet .glyph svg { width: 27px; height: 27px; }
+.sheet .dlabel { font-family: var(--serif); font-weight: 600; font-size: 34px; line-height: 1; }
+.sheet .dreason { font-size: 14px; font-weight: 600; margin-top: 6px; }
+.sheet .dexpl { font-size: 12.5px; margin-top: 3px; }
+
+/* DENY — the heavy inked block, paper text + slash glyph (a valid result) */
+.sheet[data-decision="deny"] .decision { background: var(--deny); color: var(--paper-on-ink); }
+.sheet[data-decision="deny"] .dexpl { color: var(--strip-dim); }
+
+/* ALLOW — light block + green check (the ONLY semantic use of green) */
+.sheet[data-decision="allow"] .decision { background: #fff; color: var(--allow); }
+.sheet[data-decision="allow"] .dreason { color: var(--ink); }
+.sheet[data-decision="allow"] .dexpl { color: var(--muted); }
+
+/* REVIEW — first-class amber block + caution glyph (a discipline, not a failure) */
+.sheet[data-decision="review"] .decision { background: var(--ochre-band); color: var(--ochre-ink); }
+.sheet[data-decision="review"] .dreason { color: var(--ochre-ink); }
+.sheet[data-decision="review"] .dexpl { color: var(--ink); }
+
+/* ---------- basis for decision ---------- */
+.sheet .sec { padding: 14px 20px; border-bottom: 1px solid var(--rule); }
+.sheet .sec h3 { margin: 0 0 9px; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+.sheet .table-wrap { overflow-x: auto; }
+.sheet table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.sheet th, .sheet td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+.sheet th { font-size: 10px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); font-weight: 600; border-bottom: 1.5px solid var(--ink); }
+.sheet td.k { font-weight: 600; }
+.sheet .mono { font-family: var(--mono); font-size: 11.5px; word-break: break-all; }
+.sheet .pending { font-style: italic; color: var(--muted); }
+.sheet .pending::before { content: "○ "; color: var(--ochre-ink); }
+.sheet .maqasid { margin-top: 10px; font-size: 12.5px; }
+.sheet .maqasid b { font-weight: 600; }
+.sheet .maqasid i { color: var(--muted); }
+
+/* ---------- madhab position (formal notice — no four-way comparison UI) ---------- */
+.sheet .madhab { background: var(--notice-bg); border: 1px solid var(--rule); border-left: 3px solid var(--green); padding: 11px 13px; margin: 14px 20px 0; font-size: 12.5px; }
+.sheet .madhab b { display: block; font-size: 10px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin-bottom: 4px; font-weight: 600; }
+.sheet .madhab .schools { font-weight: 600; }
+
+/* ---------- verify affordance — at the BOTTOM (serves the dev lens) ---------- */
+.sheet .verify { padding: 14px 20px; border-top: 1px solid var(--rule); margin-top: 14px; }
+.sheet .verify h3 { margin: 0 0 9px; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+.sheet .verify .cmd { font-family: var(--mono); font-size: 11.5px; background: var(--mono-bg); border: 1px solid var(--rule); padding: 9px 11px; display: flex; justify-content: space-between; gap: 8px; align-items: center; }
+.sheet .verify .cmd .cmd-text { word-break: break-all; }
+.sheet .verify .cmd .copy { font-family: var(--mono); font-size: 11px; border: 1px solid var(--rule); padding: 4px 12px; min-height: 44px; color: var(--muted); background: var(--paper); cursor: pointer; flex: 0 0 auto; }
+.sheet .vrow { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+.sheet .vstat { font-size: 12.5px; display: flex; align-items: baseline; gap: 6px; }
+.sheet .vstat .marker { font-weight: 700; flex: 0 0 auto; }
+.sheet .vstat[data-state="ok"] .marker { color: var(--allow); }
+.sheet .vstat[data-state="fail"] .marker { color: var(--error); }   /* a failed check is a system-level alarm, not a decision */
+.sheet .vstat[data-state="na"] .marker, .sheet .vstat[data-state="pending"] .marker { color: var(--ochre-ink); }
+.sheet .vnote { font-size: 11.5px; color: var(--muted); font-style: italic; margin: 8px 0 0; }
+.sheet .fp { font-family: var(--mono); font-size: 10.5px; color: var(--muted); margin-top: 9px; word-break: break-all; }
+.sheet .artifact-row { display: flex; gap: 8px 18px; flex-wrap: wrap; margin-top: 10px; align-items: center; }
+.sheet .artifact-row .download { font-family: var(--mono); font-size: 11px; border: 1px solid var(--rule); padding: 4px 12px; min-height: 44px; color: var(--ink); background: var(--paper); cursor: pointer; }
+.sheet .artifact-row a { font-family: var(--mono); font-size: 11px; color: var(--green); padding: 12px 0; display: inline-block; }
+
+.sheet .foot { padding: 10px 20px 15px; font-size: 10px; color: var(--muted); border-top: 1px solid var(--rule); font-family: var(--mono); }
+
+/* ---------- state: empty certificate shell (ghosted outline, never blank) ---------- */
+.sheet--empty .ghost-body { padding: 18px 20px 22px; }
+.sheet--empty .ghost-decision { display: flex; gap: 15px; align-items: center; margin-bottom: 16px; }
+.sheet--empty .ghost-glyph { width: 48px; height: 48px; border: 2.5px solid var(--rule); flex: 0 0 auto; }
+.sheet--empty .ghost-lines { flex: 1; display: flex; flex-direction: column; gap: 8px; }
+.sheet--empty .ghost-line { height: 12px; background: var(--mono-bg); border: 1px solid var(--rule); }
+.sheet--empty .ghost-line.w80 { width: 80%; } .sheet--empty .ghost-line.w70 { width: 70%; }
+.sheet--empty .ghost-line.w60 { width: 60%; } .sheet--empty .ghost-line.w40 { width: 40%; }
+.sheet--empty .empty-msg { font-size: 16px; color: var(--muted); margin: 0 0 16px; }
+.sheet--empty .ghost-table { display: flex; flex-direction: column; gap: 8px; }
+
+/* ---------- state: loading / slow ---------- */
+.viewer-state { border: 1px solid var(--rule); background: var(--paper); padding: 18px 20px; }
+.viewer-state .loading-copy { font-family: var(--serif); font-size: 17px; margin: 0 0 10px; }
+.viewer-state .intent-summary { font-family: var(--mono); font-size: 11.5px; color: var(--muted); margin: 0 0 12px; word-break: break-word; }
+.viewer-state .steps-mini { list-style: none; display: flex; gap: 10px; margin: 0; padding: 0; flex-wrap: wrap; }
+.viewer-state .steps-mini li { font-family: var(--mono); font-size: 10.5px; color: var(--muted); border: 1px solid var(--rule); padding: 4px 8px; }
+.viewer-state .steps-mini li[data-active="true"] { color: var(--green); border-color: var(--green); }
+@media (prefers-reduced-motion: no-preference) {
+  .viewer-state .steps-mini li[data-active="true"] { animation: step-pulse 1.2s ease-in-out infinite; }
+  @keyframes step-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .45; } }
+}
+.viewer-state .slow-note { font-size: 13.5px; color: var(--muted); margin: 12px 0 0; }
+
+/* ---------- state: API error — DASHED problem panel, NEVER a certificate ---------- */
+.problem-panel { border: 1.5px dashed var(--error); background: #fff; padding: 18px 20px; }
+.problem-panel .pp-head { display: flex; gap: 12px; align-items: center; margin-bottom: 10px; }
+.problem-panel .pp-glyph { width: 34px; height: 34px; flex: 0 0 auto; border: 2px dashed var(--error); color: var(--error); display: grid; place-items: center; }
+.problem-panel .pp-glyph svg { width: 20px; height: 20px; }
+.problem-panel .pp-name { font-family: var(--serif); font-weight: 600; font-size: 14px; color: var(--error); margin: 0; }
+.problem-panel .pp-title { font-size: 16px; font-weight: 600; margin: 0 0 6px; }
+.problem-panel .pp-detail { font-size: 13.5px; margin: 0 0 10px; }
+.problem-panel .pp-meta { font-family: var(--mono); font-size: 10.5px; color: var(--muted); margin: 0 0 10px; word-break: break-all; }
+.problem-panel .pp-note { font-size: 12.5px; color: var(--muted); font-style: italic; margin: 0; }
