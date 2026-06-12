@@ -17,7 +17,7 @@
  *
  * This file owns ALL derived example artifacts so none of them can drift:
  *   examples/jwks.json   — the PUBLIC JWKS for the demo key (no private `d`)
- *   examples/pack.json   — a copy of rule-packs/shariah/0.1.0.json (re-hashable)
+ *   examples/pack.json   — a copy of rule-packs/shariah/0.1.1.json (re-hashable)
  *   examples/casino-hotel.evidence.jws — the signed DENY evidence artifact
  * It does NOT (re)generate examples/issuer.demo.jwk.json — that throwaway demo
  * private key is committed once and is the fixed anchor of reproducibility.
@@ -49,7 +49,7 @@ export const SOURCE_PACK_PATH = join(
   repoRoot,
   "rule-packs",
   "shariah",
-  "0.1.0.json",
+  "0.1.1.json",
 );
 export const EXAMPLE_JWKS_PATH = join(EXAMPLES_DIR, "jwks.json");
 export const EXAMPLE_PACK_PATH = join(EXAMPLES_DIR, "pack.json");

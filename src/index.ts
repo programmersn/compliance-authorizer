@@ -86,7 +86,7 @@ let signingKey: SigningKey;
 let app: ReturnType<typeof buildServer>;
 try {
   loadedPack = loadRulePackFile(
-    join(repoRoot, "rule-packs", "shariah", "0.1.0.json"),
+    join(repoRoot, "rule-packs", "shariah", "0.1.1.json"),
   );
   signingKey = loadOrCreateIssuerKey();
   app = buildServer({

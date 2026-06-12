@@ -33,7 +33,7 @@ import { fixedEnvelopeDeps } from "../fixtures/deps.ts";
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const loaded = loadRulePackFile(
-  join(repoRoot, "rule-packs", "shariah", "0.1.0.json"),
+  join(repoRoot, "rule-packs", "shariah", "0.1.1.json"),
 );
 const signingKey = generateSigningKey();
 
@@ -232,6 +232,6 @@ describe("POST /verify replay: reproducibility is reported separately from authe
     expect(r["replayed"]).toBe(false);
     expect(r["reproduced"]).toBeNull();
     expect(r["detail"]).toContain("not served by this engine");
-    expect(r["detail"]).toContain("shariah@0.1.0");
+    expect(r["detail"]).toContain("shariah@0.1.1");
   });
 });

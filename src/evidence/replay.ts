@@ -29,19 +29,26 @@
  * Pure and deterministic: no clock, no I/O, no randomness.
  */
 import { canonicalize } from "../crypto/canonicalize.ts";
-import { EVALUATOR_VERSION, evaluate } from "../rules/evaluator.ts";
+import { EVALUATOR_VERSION, type Evaluation } from "../rules/evaluator.ts";
 import type { RulePack } from "../rules/pack-schema.ts";
+import { decideIntent } from "../vc/enforce.ts";
+import { AgentCredentialError } from "../vc/verify.ts";
 
 /**
- * The replay outcome attached to a verification result. The four shapes are
+ * The replay outcome attached to a verification result. The shapes are
  * mutually exclusive and ordered by how far replay could proceed:
  *
- *   1. pack not resolved      → replayed:false, reproduced:null
- *   2. evaluator unsupported  → replayed:false, reproduced:null  (D12)
- *   3. pack + evaluator OK     → replayed:true,  reproduced:boolean
+ *   1. pack not resolved       → replayed:false, reproduced:null
+ *   2. evaluator unsupported   → replayed:false, reproduced:null  (D12)
+ *   3. credential rejected     → replayed:true,  reproduced:false (conclusive)
+ *   4. pack + evaluator OK     → replayed:true,  reproduced:boolean
  *
  * reproduced is `null` (not false) whenever replay could not be ATTEMPTED:
- * "unknown", not "mismatch". Only a completed re-evaluation yields a boolean.
+ * "unknown", not "mismatch". Shape 3 is NOT an unknown: the cited intent embeds
+ * an agent credential that fails verification, and an honest engine REFUSES
+ * such an intent (4xx, error ≠ deny) — it never signs a decision for it. The
+ * recorded decision therefore conclusively does not re-derive
+ * (agent_credential_valid:false, reproduced:false).
  */
 export type Reproducibility =
   | {
@@ -55,6 +62,14 @@ export type Reproducibility =
       evaluator_version_supported: false;
       replayed: false;
       reproduced: null;
+      detail: string;
+    }
+  | {
+      rule_pack_resolved: true;
+      evaluator_version_supported: true;
+      agent_credential_valid: false;
+      replayed: true;
+      reproduced: false;
       detail: string;
     }
   | {
@@ -116,8 +131,35 @@ export function replayEnvelope(
     };
   }
 
+  // The SAME two-layer decision function /authorize runs (rule pack ∩ optional
+  // agent-credential scope). The credential admission gate re-verifies the
+  // embedded credential's signature OFFLINE — did:key is self-certifying, so no
+  // key material beyond the envelope's own payment_intent is needed.
   const intent = envelope["payment_intent"] as Record<string, unknown>;
-  const replay = evaluate(intent, pack);
+  let replay: Evaluation;
+  try {
+    replay = decideIntent(intent, pack);
+  } catch (error) {
+    if (error instanceof AgentCredentialError) {
+      // CONCLUSIVE non-reproduction, not an unknown: an honest engine refuses
+      // an intent whose credential fails verification (4xx, error ≠ deny) and
+      // never signs a decision for it — so whatever decision this (possibly
+      // authentic, e.g. re-signed) envelope records cannot re-derive here.
+      return {
+        rule_pack_resolved: true,
+        evaluator_version_supported: true,
+        agent_credential_valid: false,
+        replayed: true,
+        reproduced: false,
+        detail:
+          "the cited payment_intent embeds an agent credential that fails " +
+          `verification (${error.message}); an honest engine refuses such an ` +
+          "intent as an integration failure (error ≠ deny) and never signs a " +
+          "decision for it, so the recorded decision does not re-derive",
+      };
+    }
+    throw error;
+  }
 
   const decisionMatch = replay.decision === envelope["decision"];
   const reasonCodesMatch = canonicalEqual(

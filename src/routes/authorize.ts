@@ -18,9 +18,11 @@ import {
 } from "../evidence/envelope.ts";
 import { CanonicalizationError } from "../crypto/canonicalize.ts";
 import type { SigningKey } from "../crypto/keys.ts";
-import { evaluate, type MatchedRule } from "../rules/evaluator.ts";
+import type { Evaluation, MatchedRule } from "../rules/evaluator.ts";
 import type { LoadedRulePack } from "../rules/loader.ts";
 import { PROBLEM_TYPE_BASE, ProblemError } from "../http/problem.ts";
+import { decideIntent } from "../vc/enforce.ts";
+import { AgentCredentialError } from "../vc/verify.ts";
 
 /**
  * Synthetic payment intent (D10: TypeBox is the schema source of truth).
@@ -58,6 +60,15 @@ export const PaymentIntentSchema = Type.Object(
         { additionalProperties: false },
       ),
     ),
+    /**
+     * OPTIONAL synthetic agent credential (ET16): a JWS-compact string whose
+     * did:key issuer and allowed-MCC scope are verified by src/vc/verify.ts —
+     * the schema only gates "non-empty string" so an invalid credential gets
+     * the dedicated 422 problem+json below, not a generic schema 400. Because
+     * the credential travels INSIDE payment_intent, intent_hash covers it and
+     * replay re-verifies it offline (did:key needs no key distribution).
+     */
+    agent_credential: Type.Optional(Type.String({ minLength: 1 })),
   },
   { additionalProperties: false },
 );
@@ -146,7 +157,30 @@ export const authorizeRoute: FastifyPluginAsync<AuthorizeRouteOptions> = (
         );
       }
 
-      const evaluation = evaluate(intent, loadedPack.pack);
+      // The engine's SINGLE decision function (two-layer: rule pack ∩ optional
+      // agent-credential scope, most-restrictive). decideIntent is the same
+      // code replay runs, so served and replayed decisions can never drift.
+      let evaluation: Evaluation;
+      try {
+        evaluation = decideIntent(intent, loadedPack.pack);
+      } catch (error) {
+        if (error instanceof AgentCredentialError) {
+          // ADMISSION FAILURE, not a decision (error ≠ deny): a malformed,
+          // tampered, alg-confused, or otherwise INVALID credential is an
+          // integration failure → 422 problem+json, NEVER a signed envelope.
+          // (A VALID credential whose scope excludes the MCC is the opposite
+          // category: a SIGNED deny via AGENT_SCOPE_EXCEEDED.)
+          throw new ProblemError(
+            422,
+            "Invalid agent credential",
+            `The payment intent presents an agent credential that failed verification: ${error.message}. ` +
+              "No decision was made and no evidence envelope exists for this request.",
+            `${PROBLEM_TYPE_BASE}/invalid-agent-credential`,
+            { credential_error: error.code },
+          );
+        }
+        throw error;
+      }
       let envelope: EvidenceEnvelope;
       let evidenceArtifact: string;
       try {

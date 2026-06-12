@@ -17,17 +17,19 @@ import {
 import type { Condition, RulePack } from "../../src/rules/pack-schema.ts";
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
-const packPath = join(repoRoot, "rule-packs", "shariah", "0.1.0.json");
+const packPath = join(repoRoot, "rule-packs", "shariah", "0.1.1.json");
 const loaded = loadRulePackFile(packPath);
 
 /**
- * Golden hash of rule-packs/shariah/0.1.0.json (sha256 over its RFC 8785
+ * Golden hash of rule-packs/shariah/0.1.1.json (sha256 over its RFC 8785
  * canonical form). If this assertion fails, the pack CONTENT changed — that is
  * a new pack version + (post-certification) a re-certification event, never a
- * silent edit.
+ * silent edit. (0.1.0 → 0.1.1 was exactly such an event: the D12-forced
+ * re-version when evaluator 0.2.0 added the agent-credential scope layer; the
+ * rules themselves are unchanged from 0.1.0.)
  */
 const GOLDEN_PACK_HASH =
-  "37b90be117e0e5d2f15c815505761661d36a4ddb84eea9f9c544fec3beddb0eb";
+  "5573ec7e039e8f882a5a8d253f901dbb29951442bace5a42353be5da50522ab4";
 
 const intent = (overrides: Record<string, unknown> = {}) => ({
   profile: "shariah-v0.1",
@@ -39,7 +41,7 @@ const intent = (overrides: Record<string, unknown> = {}) => ({
 describe("golden pack hash + canonicalization invariance (the published hash)", () => {
   it("the loaded pack hash equals the published golden hash", () => {
     expect(loaded.hash).toBe(GOLDEN_PACK_HASH);
-    expect(loaded.pack.version).toBe("0.1.0");
+    expect(loaded.pack.version).toBe("0.1.1");
     expect(loaded.pack.required_evaluator_version).toBe(EVALUATOR_VERSION);
   });
 

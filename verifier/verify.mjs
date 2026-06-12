@@ -301,7 +301,12 @@ function validateEnvelopeStrict(envelope) {
   if (scholarError) return scholarError;
 
   // payment_intent is an opaque object (its hash is bound by intent_hash; its
-  // internal shape is the rule pack's concern, not the envelope schema's).
+  // internal shape is the rule pack's concern, not the envelope schema's). That
+  // opacity includes the OPTIONAL agent_credential a two-layer intent may embed
+  // (evaluator 0.2.0): this verifier answers AUTHENTICITY only and deliberately
+  // does NOT re-verify the embedded credential — decision replay does (the
+  // credential's did:key issuer is self-certifying, so replay re-verifies it
+  // offline with no inputs beyond the envelope itself).
   if (!isPlainObject(envelope.payment_intent)) return "payment_intent is not a JSON object";
 
   return null;

@@ -23,7 +23,7 @@ import { PROBLEM_CONTENT_TYPE, registerProblemHandling } from "../../src/http/pr
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const loaded = loadRulePackFile(
-  join(repoRoot, "rule-packs", "shariah", "0.1.0.json"),
+  join(repoRoot, "rule-packs", "shariah", "0.1.1.json"),
 );
 
 const app = Fastify();
@@ -40,7 +40,7 @@ describe("GET /rule-packs/:id/:version serves the exact content-addressed bytes"
     await ready;
     const response = await app.inject({
       method: "GET",
-      url: "/rule-packs/shariah/0.1.0",
+      url: "/rule-packs/shariah/0.1.1",
     });
 
     expect(response.statusCode).toBe(200);

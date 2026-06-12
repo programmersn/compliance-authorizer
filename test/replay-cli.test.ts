@@ -114,7 +114,7 @@ describe("replay CLI exit discipline", () => {
     // rejected the pack at load and the CLI mis-classified this as exit 2.
     const foreignPack = {
       ...(JSON.parse(readFileSync(genuinePackPath, "utf8")) as Pack),
-      required_evaluator_version: "9.9.9", // valid pattern, != EVALUATOR_VERSION 0.1.0
+      required_evaluator_version: "9.9.9", // valid pattern, != EVALUATOR_VERSION 0.2.0
     };
     const foreignPackPath = join(workDir, "foreign-evaluator-pack.json");
     writeFileSync(foreignPackPath, JSON.stringify(foreignPack, null, 2), "utf8");

@@ -39,7 +39,7 @@ npm run dev
 Expected output (one-line JSON log):
 
 ```json
-{"level":"info","rule_pack":"shariah@0.1.0","rule_pack_hash":"<sha256>","issuer_kid":"<kid>","issuer_did":"did:key:<fingerprint>","msg":"compliance-authorizer up — synthetic demo rule pack (UNCERTIFIED)"}
+{"level":"info","rule_pack":"shariah@0.1.1","rule_pack_hash":"<sha256>","issuer_kid":"<kid>","issuer_did":"did:key:<fingerprint>","msg":"compliance-authorizer up — synthetic demo rule pack (UNCERTIFIED)"}
 ```
 
 The server listens on `http://127.0.0.1:8787`. The `issuer_kid` and `issuer_did` in

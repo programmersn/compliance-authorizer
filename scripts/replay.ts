@@ -36,7 +36,10 @@
  *   0 = success. WITHOUT --jwks: the decision REPRODUCED. WITH --jwks: it
  *       reproduced AND the artifact is authentic.
  *   1 = a negative verdict: the decision did not re-derive (or could not be
- *       replayed here, D12), OR — with --jwks — the artifact is not authentic.
+ *       replayed here, D12; or the cited intent embeds an agent credential
+ *       that fails offline re-verification — an honest engine never signs a
+ *       decision for such an intent), OR — with --jwks — the artifact is not
+ *       authentic.
  *       With --jwks a MALFORMED envelope is in this class too: the verifier
  *       classifies those bytes as not-valid-evidence, so the combined verdict
  *       must not soften them to exit 2 (see malformedArtifact()).
@@ -374,6 +377,21 @@ function main(): void {
       `RESULT: REPRODUCED — re-evaluation yields decision "${r.decision}" ` +
         `(${JSON.stringify(r.reason_codes)}), matching the envelope.`,
     );
+  } else if ("agent_credential_valid" in r) {
+    // CONCLUSIVE: the cited intent embeds an agent credential that fails
+    // offline re-verification (did:key — no extra inputs needed). An honest
+    // engine refuses such an intent (4xx, error ≠ deny) and never signs a
+    // decision for it, so the envelope's claimed decision cannot re-derive —
+    // a verdict (exit 1), distinct from the D12 "could not be attempted"
+    // unknown above.
+    console.log(
+      `RESULT: NOT REPRODUCED — the envelope claims decision "${citedDecision}", ` +
+        "but its cited intent embeds an INVALID agent credential.",
+    );
+    console.log(`  ${r.detail}`);
+    if (!checkingAuthenticity) {
+      console.log("  Authenticity is a separate question — run verifier/verify.mjs.");
+    }
   } else {
     console.log(
       `RESULT: NOT REPRODUCED — the envelope claims decision "${citedDecision}", ` +

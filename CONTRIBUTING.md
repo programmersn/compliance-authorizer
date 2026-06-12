@@ -36,7 +36,7 @@ the active `rule_pack_hash` and `issuer_kid` -- keep these for verifying evidenc
 artifacts.
 
 ```
-{"level":"info", ..., "rule_pack":"shariah@0.1.0", "issuer_kid":"...", "msg":"compliance-authorizer up"}
+{"level":"info", ..., "rule_pack":"shariah@0.1.1", "issuer_kid":"...", "msg":"compliance-authorizer up"}
 ```
 
 To change the port or key directory, set `PORT` or `KEYS_DIR` before starting (see
@@ -83,7 +83,7 @@ scripts/
   replay.ts       Decision-replay CLI
   build-example.ts Regenerates examples/ deterministically
 rule-packs/
-  shariah/0.1.0.json  Synthetic Shariah v0.1 rule pack (UNCERTIFIED)
+  shariah/0.1.1.json  Synthetic Shariah v0.1 rule pack (UNCERTIFIED)
 docs/
   evaluator-semantics.md  Pinned evaluator contract for D12 replayability
   getting-started.md      Tutorial: zero to first signed decision

@@ -80,7 +80,7 @@ The envelope cites `rule_pack_id`, `rule_pack_version`, and `rule_pack_hash`.
 Fetch the exact pack it was decided against:
 
 ```sh
-curl -s https://<server>/rule-packs/shariah/0.1.0 > pack.json
+curl -s https://<server>/rule-packs/shariah/0.1.1 > pack.json
 ```
 
 That endpoint returns the pack's **exact RFC 8785 canonical bytes**, so you can
@@ -128,6 +128,11 @@ node --experimental-strip-types --no-warnings scripts/replay.ts \
 Replay re-runs the **pure, deterministic** evaluator (no LLM, no clock, no
 randomness, no I/O) on the cited `payment_intent` against the pack and compares
 the result to the envelope's `decision` / `reason_codes` / `matched_rules`.
+When the cited intent embeds an `agent_credential` (the evaluator-0.2.0
+two-layer scope, `docs/evaluator-semantics.md` §7), replay also re-verifies the
+credential's Ed25519 signature **offline** — its did:key issuer is
+self-certifying, so no input beyond the envelope itself is needed — and
+re-derives the same most-restrictive combination.
 **Exit `0` = REPRODUCED** (the engine re-derives the same decision); **exit `1`
 = NOT REPRODUCED** (authentic bytes can still record a decision this engine does
 not reproduce — the tampered-then-re-signed case above — or pin an
