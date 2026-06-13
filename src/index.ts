@@ -70,8 +70,12 @@ function loadOrCreateIssuerKey(): SigningKey {
  * never changes the API's responses or determinism.
  */
 async function openIssuerEvidenceStore(): Promise<EvidenceStore> {
-  const dbPath =
-    process.env["EVIDENCE_DB"] ?? join(repoRoot, "data", "evidence.sqlite");
+  // An empty or whitespace-only EVIDENCE_DB is treated as UNSET (fall back to the
+  // default path), never as an explicit path: node:sqlite reads "" as a throwaway
+  // temporary database, so accepting it would SILENTLY discard every persisted
+  // decision on shutdown. An override must name a real file.
+  const envDbPath = process.env["EVIDENCE_DB"]?.trim();
+  const dbPath = envDbPath ? envDbPath : join(repoRoot, "data", "evidence.sqlite");
   mkdirSync(dirname(dbPath), { recursive: true });
   return openEvidenceStore(dbPath);
 }
