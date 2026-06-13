@@ -78,6 +78,26 @@ pulled forward and cleared on this branch (Codex re-flagged it on PR #10); three
       DESIGN.md §9/DR7 places the reader-facing flow near the viewer. Embed it below the live viewer
       (so it never outranks the decision), then run `/design-review`. (Design specialist.)
 
+### Design-review pass (2026-06-13, diff-aware live audit on `build/w3-4-web-surfaces`)
+Fixed inline on this branch: page-level horizontal scroll from the dev curl block at <=790px and
+in the 881-968px window (`.devin` tracks → `minmax(0,1fr)`, `.codeblk` `min-width:0`; commit
+`772ed8b`); missing `main`/`contentinfo` landmarks (commit `c40f852`). Cross-vendor (Codex +
+Claude subagent) re-confirmed every non-negotiable guard holds: UNCERTIFIED sticky/non-dismissible,
+ochre-not-red, error≠deny structurally enforced (decision requires 200 + signed `evidence_artifact`;
+problems → dashed panel; hatch schema errors render beside the editor), no named institutions
+(AAOIFI is a placeholder slot). Deferred systematization debt — **no rendered-output impact**; the
+spec never tokenized these, so this is debt, not a violation:
+- [ ] **Polish — tokenize bare `#fff`/`#000`** (`web/styles/{site,certificate,print}.css`): ~13
+      literals bypass the "consume `var(--*)`, never re-declare a hex" rule stated in `tokens.css:1-7`.
+      Add `--surface:#fff` (+ a print true-black token) and replace. Cross-model (Codex + subagent).
+- [ ] **Polish — spacing scale** (`web/styles/*.css`): padding/margin/gap are ad-hoc magic numbers
+      (2.5–46px, no 4/8px grid, no `--space-*`); extract a scale + a `.container` token for the repeated
+      `max-width:1120px; padding:…26px` pattern. Cross-model.
+- [ ] **Polish — type scale** (`web/styles/*.css`): ~20 ad-hoc font sizes incl. 0.5px-apart pairs
+      (10/10.5, 12/12.5). Floors ARE honored (≥16px body, ≥12.5px tables); what's absent is a `--text-*`
+      scale. (Subagent.)
+- [ ] **Polish — "Verify" nav link is 43px wide** (1px under the 44px touch-target floor). Trivial pad bump.
+
 ## Guards (every task)
 Synthetic data only · no LLM in the decision path · error ≠ deny · UNCERTIFIED unavoidable +
 amber (never red) · generic public labels only (no named institutions) · honesty wording verbatim ·
