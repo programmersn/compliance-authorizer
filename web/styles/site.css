@@ -147,14 +147,23 @@ code { font-family: var(--mono); font-size: 0.85em; background: var(--mono-bg); 
 
 /* ---------- developer door ---------- */
 .dev { background: #fff; border-top: 1px solid var(--rule); }
-.devin { max-width: 1120px; margin: 0 auto; padding: 26px; display: grid; grid-template-columns: 1fr 1fr; gap: 30px; align-items: start; }
+/* minmax(0, …) (not bare 1fr) so the code-column track can shrink below its
+   non-wrapping content — same guard already used on .workspace and .hatch-grid.
+   Bare 1fr resolves to minmax(auto,1fr), whose auto floor = the ~764px curl
+   line, which forced page-level horizontal scroll. */
+.devin { max-width: 1120px; margin: 0 auto; padding: 26px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 30px; align-items: start; }
 .dev h2 { font-family: var(--serif); font-size: 20px; margin: 0 0 6px; }
 .dev p { font-size: 16px; color: var(--ink); margin: 0 0 12px; }
 .contract { margin: 0 0 14px; padding-left: 18px; font-size: 16px; }
 .contract li { margin-bottom: 6px; }
 .dev .links2 { display: flex; gap: 8px 20px; font-size: 13.5px; flex-wrap: wrap; }
 .dev .links2 a { padding: 12px 0; display: inline-block; } /* >= 44px tap target */
-.codeblk { font-family: var(--mono); font-size: 12px; background: var(--ink-block); color: var(--paper-on-ink); padding: 14px 15px; line-height: 1.7; overflow-x: auto; white-space: pre; }
+/* min-width:0 lets a grid item shrink below its longest line so the existing
+   overflow-x:auto scrolls WITHIN the block instead of forcing the .devin track
+   (and, when stacked, the whole page) wider than the viewport. Without it the
+   non-wrapping curl line (~764px) caused horizontal scroll at <=790px and in
+   the 881-968px two-column window. */
+.codeblk { min-width: 0; font-family: var(--mono); font-size: 12px; background: var(--ink-block); color: var(--paper-on-ink); padding: 14px 15px; line-height: 1.7; overflow-x: auto; white-space: pre; }
 .codeblk .c { color: var(--code-comment); }
 .codeblk .g { color: var(--code-green); }
 .codenote { font-family: var(--mono); font-size: 11px; color: var(--muted); margin: 8px 0 0; }
@@ -169,6 +178,6 @@ code { font-family: var(--mono); font-size: 0.85em; background: var(--mono-bg); 
   .arrow { display: none; }
   .picker { grid-template-columns: 1fr; }
   .hatch-grid { grid-template-columns: 1fr; }
-  .devin { grid-template-columns: 1fr; }
+  .devin { grid-template-columns: minmax(0, 1fr); }
   .hero h1 { font-size: 30px; }
 }
