@@ -1,0 +1,183 @@
+/*
+ * Site chrome — landing (DESIGN.md §7, B direction, per design/landing-mockup.html)
+ * + playground layout (DESIGN.md §6). Consumes tokens.css only; no local hexes
+ * except via var(--*). No shadows, no gradients (the UNCERTIFIED hatch lives in
+ * certificate.css), no bubbly radii (AI-slop blacklist, DESIGN.md §12).
+ */
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: var(--sans);
+  font-size: 16px; /* DESIGN.md §4: body text >= 16px on the landing */
+  background: var(--paper);
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+  line-height: 1.5;
+}
+a { color: var(--green); }
+code { font-family: var(--mono); font-size: 0.85em; background: var(--mono-bg); padding: 1px 4px; }
+
+/* ---------- status strips (mono chrome) ---------- */
+.statusbar {
+  background: var(--ink-block); color: var(--strip-dim);
+  font-family: var(--mono); font-size: 11px; letter-spacing: .04em;
+  padding: 7px 26px; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px;
+}
+.statusbar .u { color: var(--strip-amber); }
+.fstrip {
+  background: var(--ink-block); color: var(--strip-muted);
+  font-family: var(--mono); font-size: 11px; letter-spacing: .04em;
+  padding: 11px 26px; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px;
+}
+.fstrip .u { color: var(--strip-amber); }
+
+/* ---------- nav ---------- */
+.nav { max-width: 1120px; margin: 0 auto; padding: 18px 26px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; }
+.brand { font-family: var(--serif); font-weight: 600; font-size: 16px; color: var(--green); display: flex; align-items: center; gap: 9px; }
+.brand .seal { width: 22px; height: 22px; border: 1.5px solid var(--green); display: grid; place-items: center; font-size: 11px; color: var(--green); }
+.nav .links { display: flex; gap: 14px; font-size: 13.5px; flex-wrap: wrap; }
+.nav .links a { color: var(--ink); text-decoration: none; padding: 12px 4px; display: inline-block; } /* >= 44px tap target */
+.nav .links a:hover { text-decoration: underline; }
+
+/* ---------- hero ---------- */
+.hero { max-width: 1120px; margin: 0 auto; padding: 30px 26px 18px; display: grid; grid-template-columns: 1.15fr .85fr; gap: 46px; align-items: center; }
+.hero h1 { font-family: var(--serif); font-weight: 600; font-size: 38px; line-height: 1.16; letter-spacing: -.01em; margin: 0 0 6px; }
+.hero .hrule { width: 64px; height: 3px; background: var(--green); margin: 14px 0 16px; }
+.hero p.sub { font-size: 16px; color: var(--ink); margin: 0 0 22px; max-width: 30em; }
+.cta { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+.btn {
+  font-family: var(--sans); font-size: 14px; font-weight: 600;
+  padding: 11px 20px; min-height: 44px; display: inline-flex; align-items: center;
+  text-decoration: none; border: 1.5px solid var(--green); cursor: pointer;
+}
+.btn.primary { background: var(--green); color: #fff; }
+.btn.ghost { background: transparent; color: var(--green); }
+.honest { font-size: 12px; color: var(--muted); margin-top: 14px; font-family: var(--mono); }
+
+/* hero specimen certificate (static, illustrative) */
+.cert { background: #fff; border: 1px solid var(--rule); position: relative; }
+.cert .band { background: repeating-linear-gradient(45deg, var(--ochre) 0 7px, var(--hatch-dark) 7px 14px); padding: 2.5px; }
+.cert .band i { display: block; background: var(--ochre-band); color: var(--ochre-ink); font-style: normal; text-align: center; font-size: 10.5px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; padding: 5px; }
+.cert .ch { padding: 9px 14px; border-bottom: 2px solid var(--green); display: flex; justify-content: space-between; align-items: center; }
+.cert .ch .t { font-family: var(--serif); font-weight: 600; font-size: 12.5px; color: var(--green); }
+.cert .ch .id { font-family: var(--mono); font-size: 9px; color: var(--muted); }
+.cert .dec { background: var(--ink-block); color: var(--paper-on-ink); padding: 15px; display: flex; gap: 12px; align-items: center; }
+.cert .dec .g { width: 34px; height: 34px; border: 2px solid var(--paper-on-ink); display: grid; place-items: center; flex: 0 0 auto; }
+.cert .dec .g svg { width: 19px; height: 19px; }
+.cert .dec .dl { font-family: var(--serif); font-weight: 600; font-size: 25px; line-height: 1; }
+.cert .dec .dr { font-size: 11.5px; font-weight: 600; margin-top: 3px; }
+.cert .meta { padding: 10px 14px; font-family: var(--mono); font-size: 10px; color: var(--muted); display: flex; flex-direction: column; gap: 3px; }
+.cert .meta .ok { color: var(--green); font-weight: 600; }
+.cert .cert-caption { padding: 0 14px 10px; font-family: var(--mono); font-size: 10px; color: var(--muted); font-style: italic; }
+
+/* ---------- how-it-works flow (ruled, not icon cards) ---------- */
+.flow { max-width: 1120px; margin: 18px auto 0; padding: 24px 26px; border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule); }
+.flow h2 { font-family: var(--serif); font-size: 14px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; margin: 0 0 16px; font-weight: 600; }
+.steps { display: grid; grid-template-columns: 1fr auto 1fr auto 1fr; gap: 16px; align-items: center; }
+.step .n { font-family: var(--mono); font-size: 11px; color: var(--ochre-ink); }
+.step h3 { font-family: var(--serif); font-size: 17px; margin: 4px 0 4px; }
+.step p { font-size: 16px; color: var(--ink); margin: 0; }
+.arrow { color: var(--rule); font-size: 22px; text-align: center; }
+
+/* ---------- forward-projection strip ---------- */
+.project { max-width: 1120px; margin: 0 auto; padding: 18px 26px; font-size: 16px; color: var(--ink); }
+.project b { color: var(--ink); }
+
+/* ---------- playground ---------- */
+.playground { border-top: 1px solid var(--rule); background: var(--paper); }
+.playground-inner { max-width: 1120px; margin: 0 auto; padding: 26px; }
+.section-name { font-family: var(--serif); font-size: 22px; font-weight: 600; margin: 0 0 6px; }
+.playground-sub { font-size: 16px; color: var(--ink); margin: 0 0 18px; max-width: 46em; }
+.noscript-note { font-size: 16px; color: var(--ochre-ink); background: var(--ochre-band); border: 1px solid var(--ochre); padding: 10px 14px; margin: 0; }
+
+.picker { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-bottom: 14px; }
+.scenario {
+  font-family: var(--sans); text-align: left; cursor: pointer;
+  background: #fff; border: 1px solid var(--rule);
+  padding: 12px 14px; min-height: 44px; color: var(--ink);
+}
+.scenario[aria-pressed="true"] { border-color: var(--green); background: var(--notice-bg); }
+.scenario .sc-label { display: block; font-weight: 600; font-size: 16px; }
+.scenario .sc-note { display: block; font-size: 13.5px; color: var(--muted); margin-top: 3px; }
+.scenario .sc-mono { display: block; font-family: var(--mono); font-size: 10.5px; color: var(--muted); margin-top: 6px; }
+
+/* the advanced / unsupported raw-JSON hatch */
+.hatch { border: 1px solid var(--rule); background: #fff; margin-bottom: 18px; }
+.hatch summary { cursor: pointer; padding: 12px 14px; min-height: 44px; font-family: var(--mono); font-size: 12px; color: var(--muted); letter-spacing: .03em; text-transform: uppercase; }
+.hatch-note { font-size: 13.5px; color: var(--muted); margin: 0; padding: 0 14px 10px; max-width: 60em; }
+.hatch-grid { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, .9fr); gap: 16px; padding: 0 14px 14px; align-items: start; }
+.hatch-label { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); font-weight: 600; margin-bottom: 6px; }
+.hatch textarea {
+  width: 100%; font-family: var(--mono); font-size: 12.5px; line-height: 1.5;
+  border: 1px solid var(--rule); background: var(--mono-bg); color: var(--ink); padding: 10px; resize: vertical;
+}
+.hatch-send { margin-top: 10px; }
+
+/* invalid-input problems render BESIDE the editor — never a toast (DESIGN.md §6) */
+.hatch-issues:empty { display: none; }
+@media (min-width: 881px) { .hatch-issues:empty { display: block; } }
+.hatch-problem { border: 1px solid var(--ochre); background: var(--ochre-band); color: var(--ochre-ink); padding: 12px 14px; font-size: 13.5px; }
+.hatch-problem h3 { margin: 0 0 8px; font-size: 12px; text-transform: uppercase; letter-spacing: .05em; }
+.hatch-problem ul { margin: 0 0 8px; padding-left: 18px; }
+.hatch-problem li { margin-bottom: 4px; }
+.hatch-problem code { background: #fff; }
+.hatch-problem .hatch-problem-foot { font-size: 11.5px; font-style: italic; margin: 0; }
+
+/* workspace: viewer inline below the picker, state legend beside it */
+.workspace { display: grid; grid-template-columns: minmax(0, 560px) minmax(0, 1fr); gap: 26px; align-items: start; }
+.evidence-region { min-width: 0; }
+
+/* legend (the four state specimens) */
+.legend h2 { font-family: var(--serif); font-size: 15px; margin: 2px 0 4px; }
+.legend p { font-size: 12.5px; color: var(--muted); margin: 0 0 14px; }
+.legend .state { border: 1px solid var(--rule); background: #fff; padding: 11px 13px; margin-bottom: 11px; display: flex; gap: 11px; align-items: center; }
+.legend .state .g { width: 30px; height: 30px; flex: 0 0 auto; border: 2px solid; display: grid; place-items: center; }
+.legend .state .g svg { width: 18px; height: 18px; }
+.legend .state .nm { font-family: var(--serif); font-weight: 600; font-size: 17px; line-height: 1; }
+.legend .state .ds { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+.legend .st-allow .g, .legend .st-allow .nm { color: var(--allow); border-color: var(--allow); }
+.legend .st-review .g, .legend .st-review .nm { color: var(--ochre-ink); border-color: var(--ochre); }
+.legend .st-deny .g { background: var(--ink-block); border-color: var(--ink-block); color: var(--paper-on-ink); }
+.legend .st-deny .nm { color: var(--ink-block); }
+.legend .st-error { border-style: dashed; border-color: var(--error); }
+.legend .st-error .g { border-style: dashed; border-color: var(--error); color: var(--error); }
+.legend .st-error .nm { color: var(--error); font-size: 13px; }
+.legend .st-error .ds b { color: var(--error); }
+
+/* ---------- developer door ---------- */
+.dev { background: #fff; border-top: 1px solid var(--rule); }
+/* minmax(0, …) (not bare 1fr) so the code-column track can shrink below its
+   non-wrapping content — same guard already used on .workspace and .hatch-grid.
+   Bare 1fr resolves to minmax(auto,1fr), whose auto floor = the ~764px curl
+   line, which forced page-level horizontal scroll. */
+.devin { max-width: 1120px; margin: 0 auto; padding: 26px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 30px; align-items: start; }
+.dev h2 { font-family: var(--serif); font-size: 20px; margin: 0 0 6px; }
+.dev p { font-size: 16px; color: var(--ink); margin: 0 0 12px; }
+.contract { margin: 0 0 14px; padding-left: 18px; font-size: 16px; }
+.contract li { margin-bottom: 6px; }
+.dev .links2 { display: flex; gap: 8px 20px; font-size: 13.5px; flex-wrap: wrap; }
+.dev .links2 a { padding: 12px 0; display: inline-block; } /* >= 44px tap target */
+/* min-width:0 lets a grid item shrink below its longest line so the existing
+   overflow-x:auto scrolls WITHIN the block instead of forcing the .devin track
+   (and, when stacked, the whole page) wider than the viewport. Without it the
+   non-wrapping curl line (~764px) caused horizontal scroll at <=790px and in
+   the 881-968px two-column window. */
+.codeblk { min-width: 0; font-family: var(--mono); font-size: 12px; background: var(--ink-block); color: var(--paper-on-ink); padding: 14px 15px; line-height: 1.7; overflow-x: auto; white-space: pre; }
+.codeblk .c { color: var(--code-comment); }
+.codeblk .g { color: var(--code-green); }
+.codenote { font-family: var(--mono); font-size: 11px; color: var(--muted); margin: 8px 0 0; }
+
+/* ---------- responsive stacking (DESIGN.md §11) ---------- */
+@media (max-width: 920px) {
+  .workspace { grid-template-columns: 1fr; }
+}
+@media (max-width: 880px) {
+  .hero { grid-template-columns: 1fr; gap: 30px; }
+  .steps { grid-template-columns: 1fr; }
+  .arrow { display: none; }
+  .picker { grid-template-columns: 1fr; }
+  .hatch-grid { grid-template-columns: 1fr; }
+  .devin { grid-template-columns: minmax(0, 1fr); }
+  .hero h1 { font-size: 30px; }
+}

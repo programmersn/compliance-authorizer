@@ -1,0 +1,116 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 510" width="800" height="510" role="img" aria-labelledby="attest-title attest-desc" font-family="'IBM Plex Sans', 'Segoe UI', system-ui, -apple-system, sans-serif">
+  <title id="attest-title">Where scholar certification slots into the evidence chain (FUTURE, v1.0)</title>
+  <desc id="attest-desc">A left-to-right flow of the runtime compliance evidence chain. A versioned rule pack is hashed to a rule_pack_hash. Today that hash flows directly into a signed Ed25519 evidence envelope, which anyone verifies offline. A provisional future stage, drawn with a dashed ochre hatch and marked UNCERTIFIED, shows where a scholar would review the pack and add a did:key detached JWS over the rule_pack_hash on certification. This demo is a synthetic demo rule pack: not a fatwa, not certified, not production advice. A certified v1.0 pack would add the scholar signature; this version does not.</desc>
+
+  <defs>
+    <!-- diagonal hatch for the provisional / future leg (ochre on ochre-band) -->
+    <pattern id="hatch" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+      <rect width="8" height="8" fill="#EFE6CE"/>
+      <line x1="0" y1="0" x2="0" y2="8" stroke="#9C5A12" stroke-width="1.1" opacity="0.55"/>
+    </pattern>
+    <!-- arrowheads: solid green for the live chain, dashed ochre for the future leg -->
+    <marker id="arrow" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M0,1 L8,4.5 L0,8 Z" fill="#14452F"/>
+    </marker>
+    <marker id="arrow-ochre" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M0,1 L8,4.5 L0,8 Z" fill="#6f3d08"/>
+    </marker>
+  </defs>
+
+  <!-- paper background + hairline frame -->
+  <rect x="0" y="0" width="800" height="510" fill="#F8F9F5"/>
+  <rect x="0.5" y="0.5" width="799" height="509" fill="none" stroke="#cfd8cc" stroke-width="1"/>
+
+  <!-- header band (mono chrome strip — UNCERTIFIED visible from the first glance) -->
+  <rect x="0" y="0" width="800" height="34" fill="#EEF1E9"/>
+  <line x1="0" y1="34" x2="800" y2="34" stroke="#cfd8cc" stroke-width="1"/>
+  <text x="22" y="22" font-family="'IBM Plex Mono', ui-monospace, 'Cascadia Code', Consolas, monospace" font-size="12" letter-spacing="0.04em" fill="#15201a">SCHOLAR ATTESTATION · WHERE CERTIFICATION SLOTS INTO THE EVIDENCE CHAIN</text>
+  <text x="778" y="22" text-anchor="end" font-family="'IBM Plex Mono', ui-monospace, 'Cascadia Code', Consolas, monospace" font-size="11" letter-spacing="0.06em" fill="#6f3d08">● UNCERTIFIED</text>
+
+  <!-- title (serif display, certificate register) -->
+  <text x="22" y="68" font-family="'IBM Plex Serif', Georgia, 'Times New Roman', serif" font-size="22" font-weight="600" fill="#14452F">The evidence chain — and where a scholar signs</text>
+  <text x="22" y="90" font-family="'IBM Plex Sans', 'Segoe UI', system-ui, sans-serif" font-size="13" fill="#5d6b60">Today the chain runs end to end without a scholar. The provisional stage shows what certification would add.</text>
+
+  <!-- ============================== LIVE CHAIN (top row) ============================== -->
+  <!-- legend: TODAY (live) -->
+  <g>
+    <rect x="22" y="114" width="14" height="14" fill="#14452F"/>
+    <text x="44" y="126" font-family="'IBM Plex Mono', ui-monospace, Consolas, monospace" font-size="11" letter-spacing="0.04em" fill="#15201a">TODAY · LIVE PATH (deterministic, signed, offline-verifiable)</text>
+  </g>
+
+  <!-- Node 1: Rule pack -->
+  <g>
+    <rect x="22" y="144" width="150" height="78" fill="#F8F9F5" stroke="#14452F" stroke-width="1.4"/>
+    <text x="36" y="168" font-family="'IBM Plex Sans', 'Segoe UI', system-ui, sans-serif" font-size="14" font-weight="600" fill="#15201a">Rule pack</text>
+    <text x="36" y="188" font-family="'IBM Plex Sans', 'Segoe UI', system-ui, sans-serif" font-size="11.5" fill="#5d6b60">Versioned, git-tracked</text>
+    <text x="36" y="204" font-family="'IBM Plex Mono', ui-monospace, Consolas, monospace" font-size="11" fill="#6f3d08">shariah-v0.1 · 0.1.1</text>
+  </g>
+
+  <!-- arrow 1 -> 2 -->
+  <line x1="172" y1="183" x2="206" y2="183" stroke="#14452F" stroke-width="1.6" marker-end="url(#arrow)"/>
+
+  <!-- Node 2: rule_pack_hash -->
+  <g>
+    <rect x="208" y="144" width="150" height="78" fill="#F8F9F5" stroke="#14452F" stroke-width="1.4"/>
+    <text x="222" y="168" font-family="'IBM Plex Sans', 'Segoe UI', system-ui, sans-serif" font-size="14" font-weight="600" fill="#15201a">rule_pack_hash</text>
+    <text x="222" y="188" font-family="'IBM Plex Sans', 'Segoe UI', system-ui, sans-serif" font-size="11.5" fill="#5d6b60">SHA-256 of canonical</text>
+    <text x="222" y="204" font-family="'IBM Plex Mono', ui-monospace, Consolas, monospace" font-size="11" fill="#6f3d08">sha256:5573ec…522ab4</text>
+  </g>
+
+  <!-- arrow 2 -> 4 (skips the future stage; the live path goes straight to the envelope) -->
+  <line x1="358" y1="183" x2="586" y2="183" stroke="#14452F" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <text x="472" y="176" text-anchor="middle" font-family="'IBM Plex Sans', 'Segoe UI', system-ui, sans-serif" font-size="11" fill="#5d6b60">hash flows into the envelope</text>
+
+  <!-- Node 4: Signed evidence envelope -->
+  <g>
+    <rect x="588" y="144" width="190" height="78" fill="#14452F" stroke="#14452F" stroke-width="1.4"/>
+    <text x="604" y="168" font-family="'IBM Plex Sans', 'Segoe UI', system-ui, sans-serif" font-size="14" font-weight="600" fill="#F8F9F5">Signed evidence envelope</text>
+    <text x="604" y="188" font-family="'IBM Plex Sans', 'Segoe UI', system-ui, sans-serif" font-size="11.5" fill="#cfd8cc">Ed25519 · JWS-compact</text>
+    <text x="604" y="204" font-family="'IBM Plex Mono', ui-monospace, Consolas, monospace" font-size="11" fill="#cfd8cc">allow / deny / review</text>
+  </g>
+
+  <!-- arrow 4 -> 5 (down to offline verification) -->
+  <line x1="683" y1="222" x2="683" y2="320" stroke="#14452F" stroke-width="1.6" marker-end="url(#arrow)"/>
+
+  <!-- Node 5: Offline verification -->
+  <g>
+    <rect x="568" y="322" width="210" height="74" fill="#F8F9F5" stroke="#14452F" stroke-width="1.4"/>
+    <text x="584" y="346" font-family="'IBM Plex Sans', 'Segoe UI', system-ui, sans-serif" font-size="14" font-weight="600" fill="#15201a">Offline verification</text>
+    <text x="584" y="365" font-family="'IBM Plex Sans', 'Segoe UI', system-ui, sans-serif" font-size="11.5" fill="#5d6b60">Anyone, zero server trust</text>
+    <text x="584" y="381" font-family="'IBM Plex Mono', ui-monospace, Consolas, monospace" font-size="10.5" fill="#14452F">✓ signature · ✓ hash · ✓ replay</text>
+  </g>
+
+  <!-- ============================== FUTURE STAGE (provisional, ochre, dashed/hatched) ============================== -->
+  <!-- legend: FUTURE (provisional) — placed clear of the live row, to the left of the scholar box -->
+  <g>
+    <rect x="22" y="246" width="14" height="14" fill="url(#hatch)" stroke="#9C5A12" stroke-width="1" stroke-dasharray="3 2"/>
+    <text x="44" y="258" font-family="'IBM Plex Mono', ui-monospace, Consolas, monospace" font-size="11" letter-spacing="0.04em" fill="#6f3d08">FUTURE · v1.0 · PROVISIONAL — not present in this demo</text>
+  </g>
+
+  <!-- the provisional scholar stage, sitting below the hash, between hash and envelope -->
+  <g>
+    <!-- dashed ochre container with diagonal hatch fill -->
+    <rect x="208" y="288" width="208" height="108" fill="url(#hatch)" stroke="#9C5A12" stroke-width="1.4" stroke-dasharray="6 4"/>
+    <!-- UNCERTIFIED chip -->
+    <rect x="222" y="300" width="92" height="18" fill="#EFE6CE" stroke="#9C5A12" stroke-width="1"/>
+    <text x="228" y="313" font-family="'IBM Plex Mono', ui-monospace, Consolas, monospace" font-size="10" letter-spacing="0.04em" fill="#6f3d08">UNCERTIFIED</text>
+    <text x="222" y="340" font-family="'IBM Plex Sans', 'Segoe UI', system-ui, sans-serif" font-size="14" font-weight="600" fill="#6f3d08">Scholar reviews &amp; signs</text>
+    <text x="222" y="358" font-family="'IBM Plex Sans', 'Segoe UI', system-ui, sans-serif" font-size="11.5" fill="#6f3d08">did:key detached JWS</text>
+    <text x="222" y="374" font-family="'IBM Plex Sans', 'Segoe UI', system-ui, sans-serif" font-size="11.5" fill="#6f3d08">over rule_pack_hash</text>
+    <text x="222" y="389" font-family="'IBM Plex Mono', ui-monospace, Consolas, monospace" font-size="9.5" fill="#9C5A12">scholar_signature_ref: pending</text>
+  </g>
+
+  <!-- dashed ochre arrow: hash -> scholar stage (where certification WOULD attach) -->
+  <line x1="312" y1="222" x2="312" y2="282" stroke="#6f3d08" stroke-width="1.4" stroke-dasharray="5 4" marker-end="url(#arrow-ochre)"/>
+  <text x="324" y="276" font-family="'IBM Plex Sans', 'Segoe UI', system-ui, sans-serif" font-size="10.5" fill="#6f3d08">would attach here</text>
+
+  <!-- dashed ochre arrow: scholar stage -> envelope (the signature WOULD ride into the envelope) -->
+  <line x1="416" y1="320" x2="586" y2="212" stroke="#6f3d08" stroke-width="1.4" stroke-dasharray="5 4" marker-end="url(#arrow-ochre)"/>
+  <text x="486" y="290" font-family="'IBM Plex Sans', 'Segoe UI', system-ui, sans-serif" font-size="10.5" fill="#6f3d08">would ride into the envelope</text>
+
+  <!-- forward-projection caption (future-conditional, verbatim honesty register) -->
+  <line x1="22" y1="424" x2="778" y2="424" stroke="#cfd8cc" stroke-width="1"/>
+  <text x="22" y="446" font-family="'IBM Plex Sans', 'Segoe UI', system-ui, sans-serif" font-size="12" fill="#5d6b60"><tspan font-weight="600" fill="#15201a">Synthetic demo rule pack — not a fatwa / not certified / not production advice.</tspan> A certified v1.0 pack <tspan font-style="italic">would</tspan> carry the</text>
+  <text x="22" y="464" font-family="'IBM Plex Sans', 'Segoe UI', system-ui, sans-serif" font-size="12" fill="#5d6b60">scholar's did:key and a detached JWS over rule_pack_hash in the slot above; this version does not. The demo carries an</text>
+  <text x="22" y="482" font-family="'IBM Plex Sans', 'Segoe UI', system-ui, sans-serif" font-size="12" fill="#5d6b60">explicit UNCERTIFIED scholar-signature slot in its place — committee-reviewable demo evidence, never a ruling.</text>
+</svg>

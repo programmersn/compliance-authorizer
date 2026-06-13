@@ -1,0 +1,56 @@
+# compliance-authorizer
+
+> Runtime compliance authorization for agentic payments: POST a payment intent,
+> get a deterministic, Ed25519-signed allow / deny / review decision with a
+> verifiable evidence envelope, driven by a versioned, content-addressed rule
+> pack. UNCERTIFIED: the shipped pack is a synthetic demo rule pack — not a
+> fatwa / not certified / not production advice; its output is
+> committee-reviewable demo evidence.
+
+Rules an agent consuming this API must follow:
+
+- A decision is ALWAYS HTTP 200 — including `deny`. Read `body.decision`,
+  never the status code. A 200 does not mean "approved".
+- `decision: "deny"` → halt, do NOT retry. The engine is deterministic (no
+  LLM, no clock, no randomness): the same intent against the same
+  `rule_pack_hash` re-derives the same deny every time.
+- `decision: "review"` → halt and escalate to a human. Not a soft allow, not a
+  soft deny.
+- `decision: "allow"` → proceed; retain `evidence_artifact` (a JWS-compact
+  signed envelope, offline-verifiable).
+- HTTP 4xx (`application/problem+json`, RFC 9457) = INTEGRATION FAILURE, never
+  a decision: no envelope exists, nothing was signed. Fix the request using
+  `problem.detail` / `problem.issues`, then resubmit; never reissue the same
+  bytes blindly, and never read a 4xx as a deny.
+- `reason_codes` is a closed, deterministic set: the Shariah v0.1 demo pack
+  emits MAYSIR, INTOXICANTS, RIBA, GHARAR, MIXED_REVENUE, and the engine appends
+  one credential-scope code, `AGENT_SCOPE_EXCEEDED`, on a two-layer intent.
+- An intent MAY carry an OPTIONAL `agent_credential` (a `did:key` JWS with an
+  allowed-MCC scope). A valid credential whose scope excludes the merchant MCC
+  yields a signed `deny` carrying `AGENT_SCOPE_EXCEEDED`; an INVALID credential
+  is a `422` problem+json (`…/invalid-agent-credential`), never a deny. The
+  credential only constrains a decision, it never authorizes one.
+- Synthetic data only: never send real card, customer, or personal data.
+
+## Docs
+
+- [Machine contract](docs/machine-contract.md): the normative always-200 /
+  problem+json contract with real captured request/response pairs
+- [AGENTS.md](AGENTS.md): the condensed agent-facing version with a worked
+  deny example
+- [Getting started](docs/getting-started.md): clone to first signed decision
+  in five minutes
+- [Evaluator semantics](docs/evaluator-semantics.md): the pinned deterministic
+  evaluation contract (operators, field resolution, conflict resolution)
+- [Reproducibility](REPRODUCIBILITY.md): verify authenticity and replay any
+  decision offline, trusting nothing
+- [Worked example](examples/README.md): a committed, byte-reproducible signed
+  deny you can verify and replay without a server
+
+## Optional
+
+- [AGT mapping](docs/agt-mapping.md): the decision/evidence model projected
+  onto a governance.toolkit/v1 policy shape (schema-mapped, not
+  engine-verified)
+- [README](README.md): project overview, endpoints, status
+- [Design system](DESIGN.md): the locked visual/IA layer for the web surfaces

@@ -21,6 +21,7 @@ import {
 } from "./crypto/keys.ts";
 import { loadRulePackFile } from "./rules/loader.ts";
 import { buildServer } from "./server.ts";
+import { openEvidenceStore, type EvidenceStore } from "./store/index.ts";
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -61,6 +62,25 @@ function loadOrCreateIssuerKey(): SigningKey {
 }
 
 /**
+ * Open the file-backed evidence store (ET14) under a gitignored `data/` dir
+ * (override with EVIDENCE_DB). On Node >= 22.6 the built-in `node:sqlite` backs
+ * it with no dependency; openEvidenceStore() fails CLOSED with one instructive
+ * message if no SQLite engine is available (it also names the better-sqlite3
+ * fallback seam). Boot persists one observational row per issued decision; this
+ * never changes the API's responses or determinism.
+ */
+async function openIssuerEvidenceStore(): Promise<EvidenceStore> {
+  // An empty or whitespace-only EVIDENCE_DB is treated as UNSET (fall back to the
+  // default path), never as an explicit path: node:sqlite reads "" as a throwaway
+  // temporary database, so accepting it would SILENTLY discard every persisted
+  // decision on shutdown. An override must name a real file.
+  const envDbPath = process.env["EVIDENCE_DB"]?.trim();
+  const dbPath = envDbPath ? envDbPath : join(repoRoot, "data", "evidence.sqlite");
+  mkdirSync(dirname(dbPath), { recursive: true });
+  return openEvidenceStore(dbPath);
+}
+
+/**
  * Resolve the listen port. Unset/empty/whitespace falls back to the default;
  * anything else MUST be an integer in [1, 65535]. Crucially, never let Number("")
  * → 0 silently bind a random ephemeral port — fail loudly instead.
@@ -78,20 +98,24 @@ function parsePort(): number {
   return port;
 }
 
-// Synchronous boot: load the pack, restore/generate the issuer key, build the
-// server. Any failure here (e.g. a corrupt keystore) must print ONE actionable
-// operator line and exit — never crash with a raw stack trace.
+// Boot: load the pack, restore/generate the issuer key, open the evidence store,
+// build the server. Any failure here (a corrupt keystore, no SQLite engine, …)
+// must print ONE actionable operator line and exit — never crash with a raw
+// stack trace. The store open is awaited, so the whole boot lives in async main.
 let loadedPack: ReturnType<typeof loadRulePackFile>;
 let signingKey: SigningKey;
+let store: EvidenceStore;
 let app: ReturnType<typeof buildServer>;
 try {
   loadedPack = loadRulePackFile(
-    join(repoRoot, "rule-packs", "shariah", "0.1.0.json"),
+    join(repoRoot, "rule-packs", "shariah", "0.1.1.json"),
   );
   signingKey = loadOrCreateIssuerKey();
+  store = await openIssuerEvidenceStore();
   app = buildServer({
     loadedPacks: [loadedPack],
     signingKey,
+    store,
     // Key-rotation seam: once the keystore retains rotated-out keys, pass the
     // full historical public set here as `publishedKeys` so old envelopes stay
     // verifiable. Until then buildServer defaults to [signingKey.publicJwk].
@@ -105,20 +129,18 @@ try {
 }
 
 const port = parsePort();
-app
-  .listen({ port, host: "127.0.0.1" })
-  .then(() => {
-    app.log.info(
-      {
-        rule_pack: `${loadedPack.pack.id}@${loadedPack.pack.version}`,
-        rule_pack_hash: loadedPack.hash,
-        issuer_kid: signingKey.kid,
-        issuer_did: signingKey.did,
-      },
-      "compliance-authorizer up — synthetic demo rule pack (UNCERTIFIED)",
-    );
-  })
-  .catch((error: unknown) => {
-    app.log.error(error);
-    process.exit(1);
-  });
+try {
+  await app.listen({ port, host: "127.0.0.1" });
+  app.log.info(
+    {
+      rule_pack: `${loadedPack.pack.id}@${loadedPack.pack.version}`,
+      rule_pack_hash: loadedPack.hash,
+      issuer_kid: signingKey.kid,
+      issuer_did: signingKey.did,
+    },
+    "compliance-authorizer up — synthetic demo rule pack (UNCERTIFIED)",
+  );
+} catch (error: unknown) {
+  app.log.error(error);
+  process.exit(1);
+}

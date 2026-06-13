@@ -1,0 +1,72 @@
+/*
+ * Print stylesheet (T-D6, DESIGN.md §11): the certificate prints as a clean
+ * committee paper-trail page. Everything that is not the rendered decision
+ * artifact is hidden; the UNCERTIFIED honesty signals MUST survive printing
+ * even when the browser strips backgrounds, so every background-borne signal
+ * here carries a text/border fallback.
+ */
+
+/* hide the page chrome — only the evidence region prints */
+.statusbar, .nav, .hero, .flow, .project,
+.section-name, .playground-sub, .noscript-note,
+.picker, .hatch, .legend, .dev, .fstrip {
+  display: none !important;
+}
+.playground, .playground-inner { border: 0; padding: 0; margin: 0; max-width: none; }
+.workspace { display: block; }
+.evidence-region { max-width: 175mm; margin: 0 auto; }
+
+@page { margin: 14mm; }
+
+body { background: #fff; color: #000; }
+
+/* the sheet becomes the page */
+.sheet { border: 1.5px solid var(--ink); background: #fff; }
+
+/* UNCERTIFIED band: ask for the hatch ink, AND fall back to a heavy double
+   border + the band's real text (which always prints) if backgrounds strip */
+.sheet .uncert, .cert .band {
+  print-color-adjust: exact;
+  -webkit-print-color-adjust: exact;
+  position: static;                      /* sticky is meaningless on paper */
+  border: 3px double var(--ochre-ink);
+}
+.sheet .uncert-inner, .cert .band i {
+  border: 1px solid var(--ochre-ink);
+  color: var(--ochre-ink);
+}
+
+/* the amber chip survives as a bordered label even with no background */
+.sheet .chip { border: 1.5px solid var(--ochre-ink); color: var(--ochre-ink); }
+
+/* watermark: faint text, printable; keep it */
+.sheet .watermark::after { opacity: .06; }
+
+/* decision block: never rely on the dark background surviving — print every
+   decision as ink-on-paper inside a heavy border, the glyph + word carry it */
+.sheet .decision,
+.sheet[data-decision="deny"] .decision,
+.sheet[data-decision="review"] .decision,
+.sheet[data-decision="allow"] .decision {
+  background: #fff !important;
+  color: var(--ink) !important;
+  border: 3px solid var(--ink);
+  border-bottom: 3px solid var(--ink);
+}
+.sheet .decision .glyph { border-color: var(--ink); color: var(--ink); }
+.sheet .dlabel, .sheet .dreason { color: var(--ink) !important; }
+.sheet .dexpl { color: var(--muted) !important; }
+
+/* madhab notice keeps its rule even without the tinted background */
+.sheet .madhab { border: 1px solid var(--ink); border-left: 3px solid var(--ink); background: #fff; }
+
+/* verify affordance: the command and statuses print; the buttons do not */
+.sheet .verify .copy, .sheet .artifact-row .download, .sheet .artifact-row a { display: none; }
+.sheet .verify .cmd { border: 1px solid var(--ink); background: #fff; }
+
+/* problem panel (if an error is on screen, it prints as what it is: a dashed
+   problem panel — still never a certificate) */
+.problem-panel { border: 1.5px dashed #000; }
+
+/* no link-URL noise inside the artifact */
+.sheet a[href]::after { content: ""; }

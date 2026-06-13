@@ -12,8 +12,16 @@ import type { Condition, Decision, Rule, RulePack } from "./pack-schema.ts";
 /**
  * Bumped on ANY observable semantics change. Packs pin this exactly; the
  * loader refuses a pack whose required_evaluator_version differs (D12).
+ *
+ * 0.2.0 (ET16/ET17): adds the agent-credential SCOPE LAYER — an intent carrying
+ * `agent_credential` is decided as most_restrictive(rule-pack decision,
+ * credential-scope decision) by src/vc/enforce.ts (decideIntent). Credential-free
+ * intents are decided EXACTLY as 0.1.0. The bump is forced by D12: a credentialed
+ * envelope replayed under 0.1.0 semantics would re-derive a different decision,
+ * so the change is observable and certification-invalidating by construction
+ * (rule-packs/shariah re-versioned 0.1.0 → 0.1.1 pinning 0.2.0).
  */
-export const EVALUATOR_VERSION = "0.1.0";
+export const EVALUATOR_VERSION = "0.2.0";
 
 export interface MatchedRule {
   rule_id: string;

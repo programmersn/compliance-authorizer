@@ -29,7 +29,7 @@ import { fixedEnvelopeDeps } from "../fixtures/deps.ts";
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const loaded = loadRulePackFile(
-  join(repoRoot, "rule-packs", "shariah", "0.1.0.json"),
+  join(repoRoot, "rule-packs", "shariah", "0.1.1.json"),
 );
 const signingKey = generateSigningKey();
 

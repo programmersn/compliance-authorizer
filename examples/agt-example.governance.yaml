@@ -1,0 +1,157 @@
+# AGT example — payment-compliance authorization as a governance.toolkit/v1 policy.
+#
+# STATUS: schema-mapped, NOT engine-verified. This document projects the
+# compliance-authorizer's decision/evidence model onto a governance.toolkit/v1
+# shape on paper only: it has not been validated against any external AGT
+# engine, and this repository neither depends on nor calls one. The semantic
+# mapping is normative in docs/agt-mapping.md; AGT-side field names may drift.
+#
+# UNCERTIFIED: synthetic demo rule pack -- not a fatwa / not certified / not
+# production advice. All scenarios are generic synthetic placeholders
+# (casino-hotel, mixed-revenue ETF, subscription); no real merchant, customer,
+# or PII appears anywhere. The attached evidence is committee-reviewable demo
+# evidence. A certified version would populate the scholar attestation slot
+# with a scholar did:key and a detached JWS over rule_pack_hash.
+
+apiVersion: governance.toolkit/v1
+kind: PolicyPack
+metadata:
+  name: payment-compliance-shariah-v0.1-demo
+  labels:
+    layer: compliance-content
+    compliance.status: uncertified
+  annotations:
+    compliance.disclaimer: >-
+      synthetic demo rule pack -- not a fatwa / not certified / not production
+      advice
+    compliance.evidence-grade: committee-reviewable demo evidence
+    mapping.status: schema-mapped, not engine-verified
+
+spec:
+  policies:
+    - id: payment-compliance-authorization
+      description: >-
+        Delegate every payment intent to the compliance-authorizer and enforce
+        its signed decision. The rules themselves live ONLY in the versioned,
+        content-addressed rule pack below; this document never restates them.
+
+      # The decision oracle. The AGT engine stays the enforcement point; the
+      # authorizer produces the decision and the signed evidence.
+      check:
+        type: external-authorizer
+        request:
+          method: POST
+          endpoint: http://127.0.0.1:8787/authorize
+          contentType: application/json
+          body: "${payment_intent}" # the agent's payment intent, verbatim
+        decisionSource:
+          # ALWAYS-200 MACHINE CONTRACT (docs/machine-contract.md):
+          # a decision -- INCLUDING a deny -- is HTTP 200; read body.decision,
+          # never the status code.
+          httpStatus: 200
+          field: decision
+
+      # Authoritative compliance content, referenced by content address only.
+      rulePackRef:
+        id: shariah
+        version: 0.1.1
+        sha256: 5573ec7e039e8f882a5a8d253f901dbb29951442bace5a42353be5da50522ab4
+        status: uncertified
+        servedAt: /rule-packs/shariah/0.1.1 # exact RFC 8785 canonical bytes
+        evaluatorVersion: 0.2.0
+        scholarAttestation:
+          # v0.1 ships a labeled UNCERTIFIED specimen, never a bare null.
+          status: uncertified
+          scholarDid: null
+          signature: null
+          note: >-
+            a certified v1.0 pack would carry the scholar's did:key and a
+            detached JWS over rule_pack_hash here
+
+      outcomes:
+        - when:
+            decision: allow
+          effect: permit
+          note: proceed; retain the evidence artifact in the audit log
+        - when:
+            decision: deny
+          effect: block
+          terminal: true
+          retry: never # deterministic engine; the same intent re-derives the same deny
+          reasonCodesField: reason_codes
+        - when:
+            decision: review
+          effect: escalate
+          escalation: human-approval
+          retry: never # a human takes over; never downgrade to permit or block
+          reasonCodesField: reason_codes
+
+      # ERROR != DENY: an HTTP 4xx problem+json is an INTEGRATION FAILURE.
+      # No decision was made and no evidence envelope exists -- it must surface
+      # as an engine error, never be recorded as a block.
+      onError:
+        match:
+          httpStatus: 4xx
+          contentType: application/problem+json
+        effect: error
+        record: integration-failure
+        remediation: fix the request per problem.detail / problem.issues, then resubmit
+
+      evidence:
+        artifactField: evidence_artifact # Ed25519 JWS-compact, RFC 8785 canonical payload
+        retain: true
+        verification:
+          offline: node verifier/verify.mjs --evidence <artifact> --jwks <jwks> --pack <pack>
+          replay: npm run replay -- --evidence <artifact> --pack <pack>
+          jwks: /.well-known/jwks.json
+          note: authenticity and reproducibility are independent properties (REPRODUCIBILITY.md)
+
+  # The three generic demo scenarios, with the REAL decisions the demo pack
+  # yields for them (captured from a running instance; see docs/agt-mapping.md).
+  examples:
+    - scenario: agent books a casino-hotel
+      intent:
+        profile: shariah-v0.1
+        merchant:
+          name: casino-hotel
+          mcc: "7011"
+          attributes: [hotel, casino, gambling]
+        amount:
+          value: 420
+          currency: EUR
+      expected:
+        decision: deny
+        reason_codes: [MAYSIR]
+        effect: block
+    - scenario: agent rebalances a mixed-revenue ETF
+      intent:
+        profile: shariah-v0.1
+        merchant:
+          name: mixed-revenue ETF
+          mcc: "6211"
+          attributes: [fund]
+        amount:
+          value: 1000
+          currency: EUR
+        screening:
+          instrument: etf
+          mixed_revenue_ratio: 0.08
+      expected:
+        decision: review
+        reason_codes: [MIXED_REVENUE]
+        effect: escalate
+    - scenario: agent sets up a subscription
+      intent:
+        profile: shariah-v0.1
+        merchant:
+          name: subscription
+          mcc: "5968"
+          attributes: []
+        amount:
+          value: 12
+          currency: EUR
+        recurring: true
+      expected:
+        decision: allow
+        reason_codes: []
+        effect: permit

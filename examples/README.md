@@ -20,7 +20,7 @@ identically on any machine.
 |---|---|
 | `issuer.demo.jwk.json` | **THROWAWAY demo PRIVATE key.** A committed Ed25519 private JWK (see the warning below). Signs the demo evidence so the example is byte-reproducible. |
 | `jwks.json` | The **public** JWKS (RFC 7517) for that key — the verifying key, no private `d`. This is what `GET /.well-known/jwks.json` serves. |
-| `pack.json` | A verbatim copy of `rule-packs/shariah/0.1.0.json` so you can re-hash it and match the envelope's `rule_pack_hash`. |
+| `pack.json` | A verbatim copy of `rule-packs/shariah/0.1.1.json` so you can re-hash it and match the envelope's `rule_pack_hash`. |
 | `casino-hotel.evidence.jws` | The signed **deny** evidence artifact (JWS-compact). The thing you verify and replay. |
 
 ### ⚠️ `issuer.demo.jwk.json` is a throwaway demo key — committed on purpose

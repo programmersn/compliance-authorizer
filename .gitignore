@@ -7,6 +7,10 @@ dist/
 build/
 coverage/
 
+# Evidence store (ET14): file-backed SQLite DB written at runtime by `npm run
+# dev`/`start`. Synthetic decisions only, but never commit a runtime DB.
+data/
+
 # Local env / secrets
 .env
 .env.local

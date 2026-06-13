@@ -1,3 +1,6 @@
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import fastifyStatic from "@fastify/static";
 import Fastify, { type FastifyInstance } from "fastify";
 import { assertPublishableJwk } from "./crypto/keys.ts";
 import type { PublicJwk, SigningKey } from "./crypto/keys.ts";
@@ -8,6 +11,7 @@ import { jwksRoute } from "./routes/jwks.ts";
 import { rulePacksRoute } from "./routes/rule-packs.ts";
 import { verifyRoute } from "./routes/verify.ts";
 import type { LoadedRulePack } from "./rules/loader.ts";
+import type { EvidenceStore } from "./store/evidence-store.ts";
 
 export interface ServerOptions {
   loadedPacks: readonly LoadedRulePack[];
@@ -21,6 +25,15 @@ export interface ServerOptions {
    */
   publishedKeys?: readonly PublicJwk[];
   envelopeDeps?: EnvelopeDeps;
+  /**
+   * OPTIONAL evidence store (ET14). When provided, POST /authorize persists one
+   * row per issued decision after signing. DEFAULT is undefined — the server runs
+   * stateless and every existing caller (and the in-repo tests) is unchanged.
+   * Persistence is observational: it never alters the response, the envelope
+   * bytes, or determinism. A write failure fails the request closed (500
+   * problem+json, no envelope).
+   */
+  store?: EvidenceStore;
   logger?: boolean;
 }
 
@@ -130,13 +143,38 @@ export function buildServer(options: ServerOptions): FastifyInstance {
     packsByProfile,
     signingKey: options.signingKey,
     ...(options.envelopeDeps ? { envelopeDeps: options.envelopeDeps } : {}),
+    ...(options.store ? { store: options.store } : {}),
   });
+
+  // Tie the evidence store's lifecycle to the server: closing the app releases
+  // the SQLite handle, so graceful restarts (and tests) don't leak or — on
+  // Windows — lock the DB file. Only registered when a store is wired; the
+  // store's close() is idempotent, so an explicit caller that also closes it is
+  // harmless. The store stays observational: this hook only releases the handle.
+  if (options.store) {
+    const store = options.store;
+    // Callback-style hook: store.close() is synchronous, so signal completion
+    // with done() rather than returning a promise.
+    app.addHook("onClose", (_instance, done) => {
+      store.close();
+      done();
+    });
+  }
 
   // W2 routes — pre-wired here so the fan-out implementers inherit a stable
   // seam; each plugin receives ONLY what it needs.
   void app.register(jwksRoute, { publishedKeys: publishedSnapshot });
   void app.register(rulePacksRoute, { packsByIdVersion });
   void app.register(verifyRoute, { publishedKeys: publishedSnapshot, packsByIdVersion });
+
+  // W3-4 web surfaces: serve web/ same-origin (GET / → web/index.html) so the
+  // playground calls the real POST /authorize with no CORS and no build step.
+  // GET-only static routes; the API routes above take precedence over the
+  // static wildcard, and a static miss falls through to the problem+json 404
+  // handler — web serving never weakens the API's error contract.
+  void app.register(fastifyStatic, {
+    root: join(dirname(fileURLToPath(import.meta.url)), "..", "web"),
+  });
 
   return app;
 }

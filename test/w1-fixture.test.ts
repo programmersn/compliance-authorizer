@@ -21,7 +21,7 @@ import { fixedEnvelopeDeps } from "./fixtures/deps.ts";
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const verifierPath = join(repoRoot, "verifier", "verify.mjs");
-const packPath = join(repoRoot, "rule-packs", "shariah", "0.1.0.json");
+const packPath = join(repoRoot, "rule-packs", "shariah", "0.1.1.json");
 
 const signingKey = generateSigningKey();
 const loadedPack = loadRulePackFile(packPath);

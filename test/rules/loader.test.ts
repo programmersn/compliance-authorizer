@@ -20,7 +20,7 @@ const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const genuinePackText = readFileSync(join(repoRoot, "examples", "pack.json"), "utf8");
 const foreignPack = (): Record<string, unknown> => ({
   ...(JSON.parse(genuinePackText) as Record<string, unknown>),
-  required_evaluator_version: "9.9.9", // valid version pattern, != EVALUATOR_VERSION 0.1.0
+  required_evaluator_version: "9.9.9", // valid version pattern, != EVALUATOR_VERSION 0.2.0
 });
 
 describe("loadRulePack — D12 evaluator-version enforcement is opt-out", () => {

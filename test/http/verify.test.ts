@@ -38,7 +38,7 @@ import { fixedEnvelopeDeps } from "../fixtures/deps.ts";
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const loaded = loadRulePackFile(
-  join(repoRoot, "rule-packs", "shariah", "0.1.0.json"),
+  join(repoRoot, "rule-packs", "shariah", "0.1.1.json"),
 );
 const signingKey = generateSigningKey();
 
@@ -147,7 +147,7 @@ describe("a well-formed request is ALWAYS 200 — valid:false is a verdict, not 
     expect(body["valid"]).toBe(true);
     expect(body["decision"]).toBe("deny");
     expect(body["rule_pack_id"]).toBe("shariah");
-    expect(body["rule_pack_version"]).toBe("0.1.0");
+    expect(body["rule_pack_version"]).toBe("0.1.1");
     expect(body["rule_pack_resolved"]).toBe(true);
     // UNCERTIFIED is unavoidable on every served surface, and the honesty
     // wording is byte-exact with the verbatim contract.

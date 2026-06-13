@@ -3,9 +3,76 @@
 All notable changes to this project are documented in this file.
 Versions follow a 4-digit MAJOR.MINOR.PATCH.MICRO scheme; dates are YYYY-MM-DD.
 
-## [0.2.1.0] - 2026-06-11
+## [0.3.0.0] - 2026-06-12
 
-Deferred hardening from the v0.2.0.0 cross-vendor review. The three schema/canonicalization
+The W3-4 wave: the human- and agent-facing surfaces over the W1/W2 decision core. A single-scroll
+web page (landing + playground + evidence viewer) now renders any decision as an audit exhibit
+rather than raw JSON, the decision path gains an optional agent-credential layer, signed envelopes
+persist to a local evidence store, and the scholar-attestation path ships as a structural specimen.
+The UNCERTIFIED marker is unavoidable on every rendered decision (amber, never red — a deny is a
+valid result, not a system error), the honesty wording is verbatim (synthetic demo rule pack — not
+a fatwa / not certified / not production advice; evidence is "committee-reviewable", never
+"board-readable"), all public scenario labels stay generic (casino-hotel, mixed-revenue ETF,
+subscription), and every forward-looking note stays future-conditional (a certified v1.0 *would*
+carry a real scholar's signature; this release does not). No LLM enters the decision path; same
+intent + same `rule_pack_hash` still yields the same decision.
+
+### Added
+
+- Single-scroll web surface served same-origin from `web/` via `@fastify/static` (`GET /` →
+  `web/index.html`): a landing section, an interactive playground, and the evidence viewer, built
+  as a decision-certificate / audit exhibit (DESIGN.md), not a SaaS dashboard. Vanilla ES modules,
+  no build step or framework. All six interaction states are reachable — idle (ghosted empty
+  certificate) → loading (with a slow-copy swap past ~2s, no artificial delay) → an inline
+  allow / deny / REVIEW certificate — plus the two failure paths: a schema error renders beside the
+  raw-JSON editor (offending field + allowed values) and an integration failure renders as a
+  distinct DASHED problem panel. A failure is NEVER a decision certificate (error ≠ deny in the UI).
+  A pre-canned REVIEW scenario (mixed-revenue ETF) gives REVIEW its first-class amber treatment, not
+  a grey "couldn't decide". DENY is an inked block, REVIEW is amber/ochre; red (#B00020) is reserved
+  for system errors only.
+- DESIGN.md §4 design tokens (`web/styles/tokens.css`, IBM Plex), a print stylesheet that renders
+  the certificate as a clean committee paper-trail page, and an accessibility baseline (semantic
+  landmarks, focus states, WCAG 2.2 AA contrast on the allow/ochre tokens).
+- Agent-credential two-layer enforcement (`src/vc/`): `agent_credential` is now an OPTIONAL field
+  on the payment intent. When present, a synthetic signed `did:key` credential
+  (`credential_type` `synthetic-agent-mcc-scope/0.1`, scope shape `{ allowed_mcc: [<4-digit MCC>] }`)
+  is verified, then enforced against the rule pack most-restrictive: a VALID credential whose
+  allowed-MCC scope excludes the intent's `merchant.mcc` produces a signed `deny` carrying the one
+  new closed reason code `AGENT_SCOPE_EXCEEDED` (appended to any pack codes; e.g. an out-of-scope
+  intent that is also `MAYSIR` denies with `["MAYSIR","AGENT_SCOPE_EXCEEDED"]`). The evaluator is
+  pinned to `0.2.0` for this added scope layer and the rule pack is re-versioned `shariah@0.1.1`
+  (pinning evaluator `0.2.0`); the bundled `examples/` were regenerated against it and the offline
+  verifier + replay tools reproduce these decisions byte-for-byte.
+- Local evidence store (ET14 remainder, `src/store/`): `POST /authorize` now persists each signed
+  envelope to a `node:sqlite` store (better-sqlite3 fallback). Idempotent on the decision id;
+  duplicate insertion is rejected; a store failure fails closed and surfaces as an integration
+  error, never a corrupted or unsigned decision.
+- Scholar-attestation path (ET20, `src/scholar/`): a did:key detached JWS over the `rule_pack_hash`
+  plus a named-scholar metadata shape, shipped as an UNCERTIFIED structural specimen
+  (`examples/scholar-attestation.specimen.json`) with fully synthetic labels — never a bare null. A
+  certified v1.0 pack *would* carry a real scholar's did:key and a detached signature over the
+  pack's hash in this exact shape; this release ships only the synthetic specimen.
+- Agent- and machine-facing docs: `docs/machine-contract.md` (the normative always-200 reference —
+  a deny is HTTP 200, read `body.decision`; deny = halt-no-retry, review = halt-escalate; a 4xx is
+  an integration failure, never a signed decision), `docs/reason-codes.md` (the closed reason-code
+  reference + the actionable problem+json contract), `docs/agt-mapping.md` + an example governance
+  YAML (`examples/agt-example.governance.yaml`, schema-mapped, not engine-verified),
+  `docs/demo-storyboard.md` (the 3-minute demo storyboard), and `llms.txt` + `AGENTS.md` for
+  agent consumption. The web dev-door links GitHub, `REPRODUCIBILITY.md`,
+  `docs/machine-contract.md`, `/.well-known/jwks.json`, and the served rule pack; there is no
+  OpenAPI route in this codebase.
+
+### Security
+
+- Invalid, tampered, or algorithm-confused agent credentials are rejected as RFC 9457 problem+json
+  (4xx), never folded into a signed deny — the credential layer holds the same error ≠ deny boundary
+  as the rest of the engine. Only a cryptographically VALID credential that is genuinely out of
+  scope produces a signed `deny` (`AGENT_SCOPE_EXCEEDED`); a broken credential is an integration
+  failure, so a forged credential can never be laundered into a citable decision artifact.
+- The served web surface hardcodes the shipped pack (`shariah@0.1.1`), evaluator (`0.2.0`), and the
+  current `rule_pack_hash` in its hero specimen, dev-door, and footer; a static drift guard asserts
+  these match the engine and that every absolute link the page advertises answers 200, so the
+  public surface cannot silently fall out of sync with the decision core. The three schema/canonicalization
 items are key-holder-only robustness (a signed-but-malformed artifact is only producible by the
 issuer, not an outsider-reachable hole), cleared before the W3 web surfaces so the viewer renders
 against a strict, RFC-defensible verifier contract. A pre-merge cross-model review of this work
@@ -82,6 +149,63 @@ malformed artifacts and both keep error ≠ verdict.
   usage, unreadable files, an unparseable pack/JWKS); bare replay (no signature to consult)
   keeps exit 2 for malformed artifacts too — the documented two-tools boundary. (Both rounds
   surfaced post-/ship by the cross-vendor Codex review on the PR.)
+
+### Hardened (pre-merge cross-vendor review)
+
+A pre-merge review of the W3-4 surfaces (specialist passes + Red Team + cross-vendor Codex,
+two Codex rounds on the fixes) surfaced three issues on the crypto/verification crown jewel,
+each fixed before merge with a regression test proven to fail on the pre-fix code:
+
+- Scholar-attestation metadata is now snapshotted with a single read AND the snapshot is itself
+  re-validated (`src/scholar/attest.ts`). `verifyScholarAttestation` previously read the nested
+  `metadata.{name,body,role,date}` three times from the caller's object (validate → signed-claim
+  reconstruction → return), so a hostile getter/Proxy could pass the signature check yet return
+  different, unsigned metadata (a nested property-read TOCTOU, the same class as the W1/W2
+  read-once fixes). The verifier now builds a single-read snapshot, re-validates that exact
+  snapshot, and uses ONLY it for both the signed-claim reconstruction and the returned value, so
+  the bytes validated, signed-over, and returned are provably identical. (JSON-parsed inputs were
+  never exploitable; this is an exported verification primitive that accepts arbitrary objects.)
+  Flagged independently by the Claude security pass and Codex.
+- The in-page (browser) verifier now rejects non-canonical base64url (`web/js/inpage-verify.js`).
+  `b64urlToBytes` checked only the alphabet and length, so a malleable signature segment (a
+  trailing don't-care-bit variant that decodes to the same 64 bytes) verified as `ok:true` in the
+  browser while the offline verifier (`verifier/verify.mjs`) and `src/vc/verify.ts` rejected the
+  same bytes via their canonical decode→re-encode round-trip. It now applies the identical
+  round-trip guard, so the browser, server, and offline paths reach the SAME verdict — the
+  independent-verifier claim no longer has a divergence. Caught by the Red Team cross-module check.
+- `EVIDENCE_DB=""` (or whitespace) no longer silently discards evidence (`src/index.ts`). An empty
+  override was passed straight to `node:sqlite`, which reads `""` as a throwaway temporary
+  database, so a mis-set env var would persist nothing and lose every decision on shutdown. An
+  empty/whitespace value is now treated as UNSET (falls back to the default `data/` path); an
+  override must name a real file. Caught by Codex.
+
+A further Codex pass on the pushed PR (#10) surfaced two more, both fixed on the branch with a
+regression test proven to fail on the pre-fix code:
+
+- The decision certificate no longer mislabels a credential-scope DENY that CO-OCCURS with a matched
+  pack rule (`web/js/render.js`). When a valid agent credential's scope excludes an MCC that the pack
+  also routes to `review`, the most-restrictive combination is a DENY that KEEPS the pack's `review`
+  rule in `matched_rules` and appends `AGENT_SCOPE_EXCEEDED` (`src/vc/enforce.ts`). `explanationLine`
+  previously returned that rule's text first — printing "routed to human review" beneath a DENY
+  label — and `basisSection` omitted the credential row entirely. Both now check `isScopeDeny()`
+  first: the explanation states the scope deny, and the basis table shows BOTH the pack rule and the
+  credential-scope row. The prior test covered only the empty-`matched_rules` scope deny, so this
+  co-occurrence slipped through. (Codex.)
+- The `EvidenceStore.persist()` synchronicity contract is now ENFORCED, not merely documented
+  (`src/routes/authorize.ts`; previously deferred to `TODOS.md`, re-flagged by Codex on the PR). The
+  port is typed `persist(): void`, but TypeScript's void return type also accepts an async
+  `persist()` (Promise<void> ⊑ void) whose rejection would escape AFTER the signed 200 — the
+  synchronous try/catch cannot catch it — breaching the fail-closed storage boundary. The route now
+  captures `persist()`'s return value and fails closed (500 problem+json, no envelope) if it is a
+  thenable, so a future async/network-backed store cannot silently leak a decision past a write that
+  settles after the response. (Codex.)
+
+Also added the last missing negative-branch tests for the agent-credential verifier
+(`test/vc/credential.test.ts`: a header that is canonical base64url but not JSON, a header that is
+JSON but not an object, a payload that is canonical base64url but not JSON). Three review follow-ups
+(engine/pack reason-code namespacing, a verify-boundary trust-model doc, and embedding the
+attestation diagram on the page) remain deferred to `TODOS.md`; none is a crypto or error ≠ deny
+break.
 
 ## [0.2.0.0] - 2026-06-09
 

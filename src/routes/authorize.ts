@@ -18,9 +18,12 @@ import {
 } from "../evidence/envelope.ts";
 import { CanonicalizationError } from "../crypto/canonicalize.ts";
 import type { SigningKey } from "../crypto/keys.ts";
-import { evaluate, type MatchedRule } from "../rules/evaluator.ts";
+import type { Evaluation, MatchedRule } from "../rules/evaluator.ts";
 import type { LoadedRulePack } from "../rules/loader.ts";
 import { PROBLEM_TYPE_BASE, ProblemError } from "../http/problem.ts";
+import type { EvidenceStore } from "../store/evidence-store.ts";
+import { decideIntent } from "../vc/enforce.ts";
+import { AgentCredentialError } from "../vc/verify.ts";
 
 /**
  * Synthetic payment intent (D10: TypeBox is the schema source of truth).
@@ -58,6 +61,15 @@ export const PaymentIntentSchema = Type.Object(
         { additionalProperties: false },
       ),
     ),
+    /**
+     * OPTIONAL synthetic agent credential (ET16): a JWS-compact string whose
+     * did:key issuer and allowed-MCC scope are verified by src/vc/verify.ts —
+     * the schema only gates "non-empty string" so an invalid credential gets
+     * the dedicated 422 problem+json below, not a generic schema 400. Because
+     * the credential travels INSIDE payment_intent, intent_hash covers it and
+     * replay re-verifies it offline (did:key needs no key distribution).
+     */
+    agent_credential: Type.Optional(Type.String({ minLength: 1 })),
   },
   { additionalProperties: false },
 );
@@ -117,6 +129,14 @@ export interface AuthorizeRouteOptions {
   packsByProfile: ReadonlyMap<string, LoadedRulePack>;
   signingKey: SigningKey;
   envelopeDeps?: EnvelopeDeps;
+  /**
+   * OPTIONAL evidence store (ET14). When present, every ISSUED decision is
+   * persisted AFTER signing and BEFORE the body is returned. Absent, the route
+   * is stateless and behaves identically — storage is observational, never part
+   * of the decision. A persist FAILURE fails the request closed (see the hook
+   * below): no signed envelope reaches the caller alongside a storage error.
+   */
+  store?: EvidenceStore;
 }
 
 export const authorizeRoute: FastifyPluginAsync<AuthorizeRouteOptions> = (
@@ -146,7 +166,30 @@ export const authorizeRoute: FastifyPluginAsync<AuthorizeRouteOptions> = (
         );
       }
 
-      const evaluation = evaluate(intent, loadedPack.pack);
+      // The engine's SINGLE decision function (two-layer: rule pack ∩ optional
+      // agent-credential scope, most-restrictive). decideIntent is the same
+      // code replay runs, so served and replayed decisions can never drift.
+      let evaluation: Evaluation;
+      try {
+        evaluation = decideIntent(intent, loadedPack.pack);
+      } catch (error) {
+        if (error instanceof AgentCredentialError) {
+          // ADMISSION FAILURE, not a decision (error ≠ deny): a malformed,
+          // tampered, alg-confused, or otherwise INVALID credential is an
+          // integration failure → 422 problem+json, NEVER a signed envelope.
+          // (A VALID credential whose scope excludes the MCC is the opposite
+          // category: a SIGNED deny via AGENT_SCOPE_EXCEEDED.)
+          throw new ProblemError(
+            422,
+            "Invalid agent credential",
+            `The payment intent presents an agent credential that failed verification: ${error.message}. ` +
+              "No decision was made and no evidence envelope exists for this request.",
+            `${PROBLEM_TYPE_BASE}/invalid-agent-credential`,
+            { credential_error: error.code },
+          );
+        }
+        throw error;
+      }
       let envelope: EvidenceEnvelope;
       let evidenceArtifact: string;
       try {
@@ -173,6 +216,70 @@ export const authorizeRoute: FastifyPluginAsync<AuthorizeRouteOptions> = (
           );
         }
         throw error;
+      }
+
+      // error ≠ deny at the STORAGE boundary (ET14). Persist the issued decision
+      // AFTER signing and BEFORE returning the body, so a write failure fails the
+      // request CLOSED — a signed envelope must NEVER reach the caller alongside a
+      // storage error. A thrown store error becomes a 500 problem+json (no
+      // envelope, no decision in the body), exactly like every other integration
+      // failure. Storage is observational: it cannot change `envelope`/the JWS
+      // bytes, only whether the request succeeds. With no store wired this hook is
+      // skipped and the route is stateless. (A duplicate decision_id — astronomically
+      // unlikely with a v4 UUID — surfaces here as a UNIQUE-constraint throw and is
+      // treated the same: fail closed, never serve a half-persisted decision.)
+      if (options.store) {
+        let persistResult: unknown;
+        try {
+          persistResult = options.store.persist({
+            decision_id: envelope.decision_id,
+            decision: envelope.decision,
+            reason_codes: envelope.reason_codes,
+            rule_pack_id: envelope.rule_pack_id,
+            rule_pack_version: envelope.rule_pack_version,
+            rule_pack_hash: envelope.rule_pack_hash,
+            evaluator_version: envelope.evaluator_version,
+            intent_hash: envelope.intent_hash,
+            envelope_version: envelope.envelope_version,
+            decision_timestamp: envelope.decision_timestamp,
+            evidence_artifact: evidenceArtifact,
+          });
+        } catch (error) {
+          // Fail closed: surface a generic 500 problem+json and let nothing
+          // signed escape. We deliberately do NOT include the freshly-signed
+          // envelope anywhere in this branch.
+          request.log.error(error, "evidence store persist failed");
+          throw new ProblemError(
+            500,
+            "Internal error",
+            "A decision was computed but could not be persisted to the evidence store, so the request fails closed: no evidence envelope is returned for this request.",
+            "about:blank",
+          );
+        }
+        // The EvidenceStore port is SYNCHRONOUS by contract (store/evidence-store.ts):
+        // the fail-closed boundary depends on persist() completing INLINE before we
+        // return the signed body. TypeScript's `void` return type would nonetheless
+        // accept an async persist() (Promise<void> is assignable to void) — and its
+        // rejection would escape AFTER this 200, silently breaching the boundary
+        // (the synchronous try/catch above cannot catch a rejected promise). A
+        // returned thenable therefore means the wired store violated the contract:
+        // fail CLOSED (a misconfiguration, never a decision), never serve a signed
+        // envelope whose durable persistence we could not confirm.
+        if (
+          persistResult !== null &&
+          (typeof persistResult === "object" || typeof persistResult === "function") &&
+          typeof (persistResult as { then?: unknown }).then === "function"
+        ) {
+          request.log.error(
+            "evidence store persist() returned a thenable; the EvidenceStore port is synchronous by contract",
+          );
+          throw new ProblemError(
+            500,
+            "Internal error",
+            "A decision was computed but the evidence store is misconfigured (its persist() is not synchronous), so the request fails closed: no evidence envelope is returned for this request.",
+            "about:blank",
+          );
+        }
       }
 
       // A decision — ANY decision, including deny — is HTTP 200.
