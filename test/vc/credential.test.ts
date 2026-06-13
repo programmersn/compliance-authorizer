@@ -147,6 +147,30 @@ describe("malformed credentials are rejected with precise codes", () => {
     expectRejection(credential, "malformed", "exactly");
   });
 
+  it("a protected header that is canonical base64url but not JSON → malformed", () => {
+    // The header is parsed BEFORE any key material or signature is touched, so
+    // reusing a genuine payload + signature still trips this branch first.
+    const [, payload, sig] = genuine.split(".") as [string, string, string];
+    expectRejection(`${b64url("not-json")}.${payload}.${sig}`, "malformed", "not valid JSON");
+  });
+
+  it("a protected header that is JSON but not an object (array) → malformed", () => {
+    const [, payload, sig] = genuine.split(".") as [string, string, string];
+    expectRejection(`${b64url("[]")}.${payload}.${sig}`, "malformed", "not a JSON object");
+  });
+
+  it("a payload that is canonical base64url but not JSON → payload_invalid", () => {
+    // Genuinely signed over non-JSON payload bytes, so the signature verifies and
+    // the payload JSON.parse is the sole defect (a distinct branch from the
+    // already-tested non-object and non-canonical payloads).
+    const credential = signRawCredential(
+      { alg: "EdDSA", kid: issuerKey.did },
+      Buffer.from("not-json", "utf8"),
+      issuerKey,
+    );
+    expectRejection(credential, "payload_invalid", "not valid JSON");
+  });
+
   it("a kid that is not a did:key → issuer_invalid", () => {
     const credential = signClaim(claimPayload(issuerKey), issuerKey, {
       alg: "EdDSA",
