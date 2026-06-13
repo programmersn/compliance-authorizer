@@ -48,6 +48,34 @@ design surfaces (T-D1..T-D8), the eng-plan-parity remainder (ET16+ET17 agent cre
 ET14 evidence store, ET18 AGT mapping, ET20 scholar-attestation path), and the DevEx docs
 (DT1 machine contract, DT2 reason codes, DT8 `llms.txt`/`AGENTS.md`).
 
+### Deferred hardening (from the v0.3.0.0 cross-vendor review) — fast-follow
+The v0.3.0.0 ship fixed the two crown-jewel findings inline (scholar-metadata property-read
+TOCTOU snapshot in `src/scholar/attest.ts`; in-page non-canonical-base64url rejection in
+`web/js/inpage-verify.js`, restoring browser/offline verifier parity) plus the `EVIDENCE_DB=""`
+silent-temp-DB footgun. These four are deferred:
+- [ ] **P2 — `EvidenceStore.persist()` synchronicity contract** (`src/store/evidence-store.ts`,
+      `src/routes/authorize.ts`): the port is typed `persist(): void` and `POST /authorize` only
+      catches a SYNCHRONOUS throw. The bundled `node:sqlite` store IS synchronous, so error ≠ deny
+      holds today; a future async/network-backed store could reject AFTER the signed 200 is sent,
+      leaking a decision past a failed write. Fix: make the contract explicit (document persist MUST
+      throw synchronously) and/or have the route detect a returned thenable and fail closed. (Codex.)
+- [ ] **P3 — reserve engine reason-codes from the pack namespace** (`src/rules/pack-schema.ts`,
+      `src/vc/enforce.ts`): a pack rule's `reason_code` (`^[A-Z][A-Z0-9_]*$`) can collide with the
+      engine code `AGENT_SCOPE_EXCEEDED`, collapsing the de-dup in `decideIntent` and mislabeling a
+      pack-rule deny as a credential-scope deny in `render.js` `isScopeDeny()`. Reserve the engine
+      code set in the pack loader (reject packs that emit it) or namespace engine codes. No crypto /
+      error ≠ deny break. (Claude adversarial.)
+- [ ] **P3 — trust-model doc at the verify boundary** (`src/scholar/attest.ts`, `src/vc/verify.ts`):
+      add a boundary doc comment stating verification proves AUTHENTICITY of a self-asserted
+      did:key attestation/credential, NOT certification by a trusted body — v0.1 ships no issuer
+      allowlist BY DESIGN (a self-certifying credential can only narrow a decision). The model is
+      already documented in `enforce.ts`/the envelope note; this makes it unmissable at the API. (Codex
+      re-flagged the self-signed acceptance twice; it is intended, not a bug.)
+- [ ] **P3 — embed the scholar-attestation SVG on the page** (`web/index.html`): `web/diagrams/
+      attestation.svg` is built to spec but only served standalone + linked from `README.md`.
+      DESIGN.md §9/DR7 places the reader-facing flow near the viewer. Embed it below the live viewer
+      (so it never outranks the decision), then run `/design-review`. (Design specialist.)
+
 ## Guards (every task)
 Synthetic data only · no LLM in the decision path · error ≠ deny · UNCERTIFIED unavoidable +
 amber (never red) · generic public labels only (no named institutions) · honesty wording verbatim ·

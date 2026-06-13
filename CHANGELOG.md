@@ -150,6 +150,42 @@ malformed artifacts and both keep error ≠ verdict.
   keeps exit 2 for malformed artifacts too — the documented two-tools boundary. (Both rounds
   surfaced post-/ship by the cross-vendor Codex review on the PR.)
 
+### Hardened (pre-merge cross-vendor review)
+
+A pre-merge review of the W3-4 surfaces (specialist passes + Red Team + cross-vendor Codex,
+two Codex rounds on the fixes) surfaced three issues on the crypto/verification crown jewel,
+each fixed before merge with a regression test proven to fail on the pre-fix code:
+
+- Scholar-attestation metadata is now snapshotted with a single read AND the snapshot is itself
+  re-validated (`src/scholar/attest.ts`). `verifyScholarAttestation` previously read the nested
+  `metadata.{name,body,role,date}` three times from the caller's object (validate → signed-claim
+  reconstruction → return), so a hostile getter/Proxy could pass the signature check yet return
+  different, unsigned metadata (a nested property-read TOCTOU, the same class as the W1/W2
+  read-once fixes). The verifier now builds a single-read snapshot, re-validates that exact
+  snapshot, and uses ONLY it for both the signed-claim reconstruction and the returned value, so
+  the bytes validated, signed-over, and returned are provably identical. (JSON-parsed inputs were
+  never exploitable; this is an exported verification primitive that accepts arbitrary objects.)
+  Flagged independently by the Claude security pass and Codex.
+- The in-page (browser) verifier now rejects non-canonical base64url (`web/js/inpage-verify.js`).
+  `b64urlToBytes` checked only the alphabet and length, so a malleable signature segment (a
+  trailing don't-care-bit variant that decodes to the same 64 bytes) verified as `ok:true` in the
+  browser while the offline verifier (`verifier/verify.mjs`) and `src/vc/verify.ts` rejected the
+  same bytes via their canonical decode→re-encode round-trip. It now applies the identical
+  round-trip guard, so the browser, server, and offline paths reach the SAME verdict — the
+  independent-verifier claim no longer has a divergence. Caught by the Red Team cross-module check.
+- `EVIDENCE_DB=""` (or whitespace) no longer silently discards evidence (`src/index.ts`). An empty
+  override was passed straight to `node:sqlite`, which reads `""` as a throwaway temporary
+  database, so a mis-set env var would persist nothing and lose every decision on shutdown. An
+  empty/whitespace value is now treated as UNSET (falls back to the default `data/` path); an
+  override must name a real file. Caught by Codex.
+
+Also added the last missing negative-branch tests for the agent-credential verifier
+(`test/vc/credential.test.ts`: a header that is canonical base64url but not JSON, a header that is
+JSON but not an object, a payload that is canonical base64url but not JSON). Four review follow-ups
+(an async-`persist()` synchronicity contract, engine/pack reason-code namespacing, a verify-boundary
+trust-model doc, and embedding the attestation diagram on the page) are deferred to `TODOS.md`; none
+is a crypto or error ≠ deny break.
+
 ## [0.2.0.0] - 2026-06-09
 
 ### Added
