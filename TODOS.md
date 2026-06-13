@@ -52,13 +52,15 @@ ET14 evidence store, ET18 AGT mapping, ET20 scholar-attestation path), and the D
 The v0.3.0.0 ship fixed the two crown-jewel findings inline (scholar-metadata property-read
 TOCTOU snapshot in `src/scholar/attest.ts`; in-page non-canonical-base64url rejection in
 `web/js/inpage-verify.js`, restoring browser/offline verifier parity) plus the `EVIDENCE_DB=""`
-silent-temp-DB footgun. These four are deferred:
-- [ ] **P2 — `EvidenceStore.persist()` synchronicity contract** (`src/store/evidence-store.ts`,
-      `src/routes/authorize.ts`): the port is typed `persist(): void` and `POST /authorize` only
-      catches a SYNCHRONOUS throw. The bundled `node:sqlite` store IS synchronous, so error ≠ deny
-      holds today; a future async/network-backed store could reject AFTER the signed 200 is sent,
-      leaking a decision past a failed write. Fix: make the contract explicit (document persist MUST
-      throw synchronously) and/or have the route detect a returned thenable and fail closed. (Codex.)
+silent-temp-DB footgun. Of the four originally deferred, the P2 store-synchronicity item was
+pulled forward and cleared on this branch (Codex re-flagged it on PR #10); three remain:
+- [x] **P2 — `EvidenceStore.persist()` synchronicity contract** (`src/store/evidence-store.ts`,
+      `src/routes/authorize.ts`): **done** — `POST /authorize` now captures `persist()`'s return and
+      fails closed (500 problem+json, no envelope) if it is a thenable, so the documented synchronous
+      contract is ENFORCED rather than merely assumed. A future async/network-backed store can no
+      longer leak a signed 200 past a write that settles after the response. Regression test in
+      `test/store/authorize-persist.test.ts` (async `persist()` → 500, nothing signed escapes).
+      (Codex W3-4 review + re-flag on PR #10.)
 - [ ] **P3 — reserve engine reason-codes from the pack namespace** (`src/rules/pack-schema.ts`,
       `src/vc/enforce.ts`): a pack rule's `reason_code` (`^[A-Z][A-Z0-9_]*$`) can collide with the
       engine code `AGENT_SCOPE_EXCEEDED`, collapsing the de-dup in `decideIntent` and mislabeling a

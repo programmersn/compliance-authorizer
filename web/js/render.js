@@ -177,10 +177,18 @@ function reasonHeadline(body) {
 function explanationLine(body) {
   const rules = Array.isArray(body.matched_rules) ? body.matched_rules : [];
   const first = rules[0];
-  if (first && typeof first.description === "string") return first.description;
+  // A credential-scope deny is the OPERATIVE cause of the DENY and takes
+  // precedence over any matched pack rule's text. The combination keeps the
+  // pack's matched rules (src/vc/enforce.ts), so a scope deny can co-occur with
+  // a `review` rule (most-restrictive: scope-deny beats pack-review) whose
+  // description would otherwise contradict the DENY label. Check the scope deny
+  // BEFORE falling back to the first matched rule's description.
   if (isScopeDeny(body)) {
-    return "No rule pack rule matched, but the presented agent credential's allowed-MCC scope excludes this merchant's MCC — the engine denied (AGENT_SCOPE_EXCEEDED).";
+    return first && typeof first.description === "string"
+      ? "The presented agent credential's allowed-MCC scope excludes this merchant's MCC, so the engine denied (AGENT_SCOPE_EXCEEDED) — most-restrictive across the matched pack rule and the credential scope."
+      : "No rule pack rule matched, but the presented agent credential's allowed-MCC scope excludes this merchant's MCC — the engine denied (AGENT_SCOPE_EXCEEDED).";
   }
+  if (first && typeof first.description === "string") return first.description;
   return "No rule in the synthetic demo pack matched this intent; the pack's default decision applies (category-level screening only).";
 }
 
@@ -198,6 +206,22 @@ function decisionBlock(body) {
   return block;
 }
 
+/**
+ * The credential-scope basis row: the deny's cause is the credential embedded in
+ * payment_intent (covered by intent_hash), NOT a pack rule. Shown for ANY scope
+ * deny — whether the pack matched nothing OR also matched a (less-restrictive)
+ * rule — so the basis table never omits the actual cause of the DENY.
+ */
+function scopeDenyRow() {
+  const row = el("tr");
+  row.append(
+    el("td", "k mono", "(agent credential)"),
+    el("td", "", "Scope exceeded — merchant MCC not in the credential's allowed_mcc"),
+    el("td", "pending", AAOIFI_PENDING), // the placeholder is styled, never blank
+  );
+  return row;
+}
+
 function basisSection(body) {
   const sec = el("section", "sec basis");
   sec.append(el("h3", "", "Basis for decision"));
@@ -209,24 +233,22 @@ function basisSection(body) {
   table.append(head);
 
   const rules = Array.isArray(body.matched_rules) ? body.matched_rules : [];
+  const scopeDenied = isScopeDeny(body);
   if (rules.length === 0) {
     // No pack rule matched. Two distinct outcomes share this shape: a pack-default
     // ALLOW, and a credential-scope DENY (the basis is the credential, not a pack
     // rule). Label each honestly so a deny is never shown as a default allow.
-    const scopeDenied = isScopeDeny(body);
-    const row = el("tr");
-    row.append(
-      el("td", "k mono", scopeDenied ? "(agent credential)" : "(no rule matched)"),
-      el(
-        "td",
-        "",
-        scopeDenied
-          ? "Scope exceeded — merchant MCC not in the credential's allowed_mcc"
-          : "Pack default decision — allow",
-      ),
-      el("td", "pending", AAOIFI_PENDING), // the placeholder is styled, never blank
-    );
-    table.append(row);
+    if (scopeDenied) {
+      table.append(scopeDenyRow());
+    } else {
+      const row = el("tr");
+      row.append(
+        el("td", "k mono", "(no rule matched)"),
+        el("td", "", "Pack default decision — allow"),
+        el("td", "pending", AAOIFI_PENDING), // the placeholder is styled, never blank
+      );
+      table.append(row);
+    }
   } else {
     for (const rule of rules) {
       const row = el("tr");
@@ -238,6 +260,11 @@ function basisSection(body) {
       );
       table.append(row);
     }
+    // A scope deny can co-occur with matched pack rules (e.g. a `review` rule +
+    // a credential whose scope excludes the MCC → most-restrictive DENY). Append
+    // the credential-scope row so the basis shows the ACTUAL cause of the deny,
+    // never just the (less-restrictive) pack rule that the DENY label overrode.
+    if (scopeDenied) table.append(scopeDenyRow());
   }
   wrap.append(table);
   sec.append(wrap);

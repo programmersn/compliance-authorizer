@@ -179,12 +179,33 @@ each fixed before merge with a regression test proven to fail on the pre-fix cod
   empty/whitespace value is now treated as UNSET (falls back to the default `data/` path); an
   override must name a real file. Caught by Codex.
 
+A further Codex pass on the pushed PR (#10) surfaced two more, both fixed on the branch with a
+regression test proven to fail on the pre-fix code:
+
+- The decision certificate no longer mislabels a credential-scope DENY that CO-OCCURS with a matched
+  pack rule (`web/js/render.js`). When a valid agent credential's scope excludes an MCC that the pack
+  also routes to `review`, the most-restrictive combination is a DENY that KEEPS the pack's `review`
+  rule in `matched_rules` and appends `AGENT_SCOPE_EXCEEDED` (`src/vc/enforce.ts`). `explanationLine`
+  previously returned that rule's text first — printing "routed to human review" beneath a DENY
+  label — and `basisSection` omitted the credential row entirely. Both now check `isScopeDeny()`
+  first: the explanation states the scope deny, and the basis table shows BOTH the pack rule and the
+  credential-scope row. The prior test covered only the empty-`matched_rules` scope deny, so this
+  co-occurrence slipped through. (Codex.)
+- The `EvidenceStore.persist()` synchronicity contract is now ENFORCED, not merely documented
+  (`src/routes/authorize.ts`; previously deferred to `TODOS.md`, re-flagged by Codex on the PR). The
+  port is typed `persist(): void`, but TypeScript's void return type also accepts an async
+  `persist()` (Promise<void> ⊑ void) whose rejection would escape AFTER the signed 200 — the
+  synchronous try/catch cannot catch it — breaching the fail-closed storage boundary. The route now
+  captures `persist()`'s return value and fails closed (500 problem+json, no envelope) if it is a
+  thenable, so a future async/network-backed store cannot silently leak a decision past a write that
+  settles after the response. (Codex.)
+
 Also added the last missing negative-branch tests for the agent-credential verifier
 (`test/vc/credential.test.ts`: a header that is canonical base64url but not JSON, a header that is
-JSON but not an object, a payload that is canonical base64url but not JSON). Four review follow-ups
-(an async-`persist()` synchronicity contract, engine/pack reason-code namespacing, a verify-boundary
-trust-model doc, and embedding the attestation diagram on the page) are deferred to `TODOS.md`; none
-is a crypto or error ≠ deny break.
+JSON but not an object, a payload that is canonical base64url but not JSON). Three review follow-ups
+(engine/pack reason-code namespacing, a verify-boundary trust-model doc, and embedding the
+attestation diagram on the page) remain deferred to `TODOS.md`; none is a crypto or error ≠ deny
+break.
 
 ## [0.2.0.0] - 2026-06-09
 

@@ -97,6 +97,21 @@ const SCOPE_DENY_BODY = {
   matched_rules: [],
 };
 
+/**
+ * A credential-scope DENY that CO-OCCURS with a matched pack rule. The pack
+ * routed this MCC to `review`, but the agent credential's allowed_mcc excluded
+ * it; the most-restrictive combination is a DENY that KEEPS the pack's review
+ * rule in matched_rules and APPENDS AGENT_SCOPE_EXCEEDED (src/vc/enforce.ts).
+ * The certificate must not let the review rule's text contradict the DENY label,
+ * and must still surface the credential-scope basis row.
+ */
+const SCOPE_DENY_WITH_REVIEW_BODY = {
+  ...REVIEW_BODY,
+  decision: "deny",
+  reason_codes: ["MIXED_REVENUE", "AGENT_SCOPE_EXCEEDED"],
+  // matched_rules inherited from REVIEW_BODY: the MIXED-REVENUE `review` rule.
+};
+
 const CASINO_INTENT = {
   profile: "shariah-v0.1",
   merchant: { name: "casino-hotel", mcc: "7011", attributes: ["casino", "gambling"] },
@@ -284,6 +299,27 @@ describe("state 4 — success: the decision certificate (DESIGN.md §5 field ran
     );
     // honesty markers stay present on a scope deny
     expect(must(scope.querySelector(".chip")).textContent).toBe("Uncertified");
+  });
+
+  it("a credential-scope DENY co-occurring with a matched review rule never reads as a review (label, explanation, and basis all stay a deny)", () => {
+    const scope = renderCertificate(SCOPE_DENY_WITH_REVIEW_BODY);
+    // The decision is a DENY — the most-restrictive combination, not the review.
+    expect(scope.dataset["decision"]).toBe("deny");
+    expect(must(scope.querySelector(".dlabel")).textContent).toBe("DENY");
+    // Both reason codes surface in the headline.
+    const reason = must(scope.querySelector(".dreason")).textContent ?? "";
+    expect(reason).toContain("MIXED_REVENUE");
+    expect(reason).toContain("AGENT_SCOPE_EXCEEDED — agent credential scope exceeded");
+    // The explanation must reflect the scope deny, NEVER the review rule's text
+    // (which would otherwise claim the case was "routed to human review").
+    const expl = must(scope.querySelector(".dexpl")).textContent ?? "";
+    expect(expl).toContain("AGENT_SCOPE_EXCEEDED");
+    expect(expl).not.toContain("routed to human review");
+    // The basis shows BOTH layers: the matched pack rule AND the credential row.
+    const basis = must(scope.querySelector(".basis"));
+    expect(basis.textContent).toContain("MIXED-REVENUE");
+    expect(basis.textContent).toContain("(agent credential)");
+    expect(basis.textContent).toContain("Scope exceeded");
   });
 
   it("refuses to render a certificate without a signed evidence artifact (error ≠ deny)", () => {

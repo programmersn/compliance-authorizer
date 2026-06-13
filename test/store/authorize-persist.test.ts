@@ -164,6 +164,54 @@ describe("error ≠ deny at the storage boundary (injected write failure)", () =
   });
 });
 
+describe("the EvidenceStore port is synchronous — an async store fails closed", () => {
+  it("a persist() that returns a promise → 500 problem+json, NO envelope (the boundary cannot await past the 200)", async () => {
+    // The port is `persist(): void`, but TypeScript's void return type ALSO
+    // accepts an async persist() (Promise<void> is assignable to void). Such a
+    // store's write would settle AFTER /authorize has returned the signed 200,
+    // so a later rejection would breach the fail-closed boundary unseen (the
+    // synchronous try/catch cannot catch a rejected promise). The route must
+    // detect the returned thenable and fail closed synchronously instead.
+    const asyncStore: EvidenceStore = {
+      // eslint-disable-next-line @typescript-eslint/no-misused-promises -- deliberately constructing the async misuse the route must reject
+      async persist() {
+        /* resolves AFTER the response would already be sent */
+      },
+      read() {
+        return undefined;
+      },
+      close() {
+        /* no-op */
+      },
+    };
+    const app = buildServer({
+      loadedPacks: [loadedPack],
+      signingKey,
+      store: asyncStore,
+    });
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/authorize",
+        payload: denyIntent,
+      });
+
+      expect(response.statusCode).toBe(500);
+      expect(response.headers["content-type"]).toContain(PROBLEM_CONTENT_TYPE);
+
+      const body = response.json<Record<string, unknown>>();
+      expect(body["status"]).toBe(500);
+      expect(body["title"]).toBe("Internal error");
+      expect(body["detail"]).toContain("not synchronous");
+      // The load-bearing assertions: NOTHING signed escaped with the failure.
+      expect(body).not.toHaveProperty("evidence_artifact");
+      expect(body).not.toHaveProperty("decision");
+    } finally {
+      await app.close();
+    }
+  });
+});
+
 describe("the store is observational — disabled server is unchanged", () => {
   it("with NO store wired, a deny is the identical 200 decision shape", async () => {
     const app = buildServer({

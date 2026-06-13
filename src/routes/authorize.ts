@@ -229,8 +229,9 @@ export const authorizeRoute: FastifyPluginAsync<AuthorizeRouteOptions> = (
       // unlikely with a v4 UUID — surfaces here as a UNIQUE-constraint throw and is
       // treated the same: fail closed, never serve a half-persisted decision.)
       if (options.store) {
+        let persistResult: unknown;
         try {
-          options.store.persist({
+          persistResult = options.store.persist({
             decision_id: envelope.decision_id,
             decision: envelope.decision,
             reason_codes: envelope.reason_codes,
@@ -252,6 +253,30 @@ export const authorizeRoute: FastifyPluginAsync<AuthorizeRouteOptions> = (
             500,
             "Internal error",
             "A decision was computed but could not be persisted to the evidence store, so the request fails closed: no evidence envelope is returned for this request.",
+            "about:blank",
+          );
+        }
+        // The EvidenceStore port is SYNCHRONOUS by contract (store/evidence-store.ts):
+        // the fail-closed boundary depends on persist() completing INLINE before we
+        // return the signed body. TypeScript's `void` return type would nonetheless
+        // accept an async persist() (Promise<void> is assignable to void) — and its
+        // rejection would escape AFTER this 200, silently breaching the boundary
+        // (the synchronous try/catch above cannot catch a rejected promise). A
+        // returned thenable therefore means the wired store violated the contract:
+        // fail CLOSED (a misconfiguration, never a decision), never serve a signed
+        // envelope whose durable persistence we could not confirm.
+        if (
+          persistResult !== null &&
+          (typeof persistResult === "object" || typeof persistResult === "function") &&
+          typeof (persistResult as { then?: unknown }).then === "function"
+        ) {
+          request.log.error(
+            "evidence store persist() returned a thenable; the EvidenceStore port is synchronous by contract",
+          );
+          throw new ProblemError(
+            500,
+            "Internal error",
+            "A decision was computed but the evidence store is misconfigured (its persist() is not synchronous), so the request fails closed: no evidence envelope is returned for this request.",
             "about:blank",
           );
         }
