@@ -98,6 +98,20 @@ spec never tokenized these, so this is debt, not a violation:
       scale. (Subagent.)
 - [ ] **Polish — "Verify" nav link is 43px wide** (1px under the 44px touch-target floor). Trivial pad bump.
 
+### Devex-review pass (2026-06-13, live CLI + docs dogfood)
+DX is strong (overall ~8/10): `npm run verify:fixture` PASS/deny/exit-0 in ~1.2s (TTHW well under 2
+min after `npm ci`), README + `getting-started.md` quickstarts copy-paste-accurate (curl returns
+the documented `deny`/`MAYSIR`/`uncertified` at 200), error messages exemplary (input-error vs
+verification-verdict cleanly split, consistent exit 2, "operator/input problem, NOT a verification
+verdict"), the DT1 always-200 / 4xx anti-footgun stated in full on every surface. Two minor items:
+- [ ] **Polish — `--help`/`-h` on `verifier/verify.mjs` (+ `scripts/replay.ts`)** prints
+      `INPUT ERROR: Unknown option '--help'` (exit 2) instead of treating the canonical help gesture
+      as a help request. Usage IS printed so the dev is not blocked, but recognizing `--help`/`-h` →
+      print usage, exit 0 would be friendlier. Route any verifier change through its test discipline
+      (crown-jewel surface; the exit-code boundary is a settled call).
+- [ ] **Polish — verify the test count in `CONTRIBUTING.md`** (says "393 tests (26 files)"; commit
+      `e0adb21` synced the count to 391). Confirm against the real suite count and correct the doc.
+
 ## Guards (every task)
 Synthetic data only · no LLM in the decision path · error ≠ deny · UNCERTIFIED unavoidable +
 amber (never red) · generic public labels only (no named institutions) · honesty wording verbatim ·
