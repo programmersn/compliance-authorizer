@@ -31,6 +31,15 @@ export function b64urlToBytes(text) {
   const bin = atob(text.replace(/-/g, "+").replace(/_/g, "/") + pad);
   const bytes = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i += 1) bytes[i] = bin.charCodeAt(i);
+  // Reject NON-CANONICAL base64url (a final character's unused don't-care bits):
+  // atob maps several texts to the same bytes (e.g. "AA" and "AB" both decode to
+  // 0x00). The offline verifier (verifier/verify.mjs) and src/vc/verify.ts reject
+  // these as malleable via a decode -> re-encode round-trip; the in-page path MUST
+  // reach the SAME verdict or the independent-verifier claim breaks. bytesToB64url
+  // emits canonical, unpadded base64url, so the round-trip pins the encoding.
+  if (bytesToB64url(bytes) !== text) {
+    throw new Error("not canonical unpadded base64url (malleable encoding rejected)");
+  }
   return bytes;
 }
 

@@ -114,8 +114,29 @@ describe("negative-alg and tamper cases — ALL must fail", () => {
     expect(verdict).toMatchObject({ ok: false, reason: "Ed25519 signature verification failed" });
   });
 
-  it("a PADDED signature segment is rejected as malformed (no base64url malleability)", async () => {
+  it("a PADDED signature segment is rejected as malformed (padding closed)", async () => {
     const verdict = await verifyEnvelopeSignature(`${headerB64}.${payloadB64}.${signatureB64}=`, jwks);
+    expect(verdict.ok).toBe(false);
+    expect(verdict.reason).toContain("base64url");
+  });
+
+  it("a NON-CANONICAL signature segment (don't-care bits set) is rejected, matching the offline verifier", async () => {
+    // The last base64url char of a 64-byte Ed25519 signature carries significant
+    // bits + unused don't-care bits. Canonical encoding zeroes them; a variant
+    // that sets a don't-care bit decodes to the SAME 64 bytes (e.g. "AA" and "AB"
+    // both decode to 0x00). verifier/verify.mjs and src/vc/verify.ts reject such
+    // malleable encodings via a decode -> re-encode round-trip — the in-page path
+    // MUST reach the SAME verdict, never flash green on bytes the authoritative
+    // verifier rejects (the verifier-divergence this module promises to avoid).
+    const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+    const lastChar = signatureB64[signatureB64.length - 1] as string;
+    const variant = ALPHABET[ALPHABET.indexOf(lastChar) + 1] as string; // sets a don't-care bit
+    const malleated = `${signatureB64.slice(0, -1)}${variant}`;
+    // It must be a DIFFERENT string that decodes to the SAME bytes (genuinely
+    // malleable, not a different signature) — assert both, so the test is sound.
+    expect(malleated).not.toBe(signatureB64);
+    expect(Buffer.from(malleated, "base64url")).toEqual(Buffer.from(signatureB64, "base64url"));
+    const verdict = await verifyEnvelopeSignature(`${headerB64}.${payloadB64}.${malleated}`, jwks);
     expect(verdict.ok).toBe(false);
     expect(verdict.reason).toContain("base64url");
   });
