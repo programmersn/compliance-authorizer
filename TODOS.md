@@ -109,8 +109,9 @@ verdict"), the DT1 always-200 / 4xx anti-footgun stated in full on every surface
       as a help request. Usage IS printed so the dev is not blocked, but recognizing `--help`/`-h` →
       print usage, exit 0 would be friendlier. Route any verifier change through its test discipline
       (crown-jewel surface; the exit-code boundary is a settled call).
-- [ ] **Polish — verify the test count in `CONTRIBUTING.md`** (says "393 tests (26 files)"; commit
-      `e0adb21` synced the count to 391). Confirm against the real suite count and correct the doc.
+- [x] **Test count in `CONTRIBUTING.md` verified accurate** — `npx vitest run` during the qa-only
+      pass reports **393 passed (26 files)**, matching the doc. (The 391 in commit `e0adb21` was an
+      intermediate count; later commits brought it to 393 and the doc was updated. No action needed.)
 
 ## Guards (every task)
 Synthetic data only · no LLM in the decision path · error ≠ deny · UNCERTIFIED unavoidable +
