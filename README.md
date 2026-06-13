@@ -242,5 +242,3 @@ naming both `node:sqlite` and `npm install better-sqlite3`, or the store can be 
 ## License
 
 MIT © 2026 Nouaïm Souiki
-</content>
-</invoke>
