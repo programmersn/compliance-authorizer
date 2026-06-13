@@ -316,9 +316,30 @@ export function verifyScholarAttestation(
   if (typeof boundPackHash !== "string" || !SHA256_HEX.test(boundPackHash)) {
     fail("claim_invalid", "scholar attestation rule_pack_hash is not a lowercase sha256 hex digest");
   }
+  // Validate the raw value first: this preserves the exact error messages and the
+  // exact-keys (no extra fields) rejection.
   const metadataError = validateMetadata(metadataValue);
   if (metadataError !== null) fail("claim_invalid", metadataError);
-  const metadata = metadataValue as ScholarMetadata;
+  // Single-read SNAPSHOT of the nested metadata members. Everything below — the
+  // claimBytes signature reconstruction AND the returned verified result — reads
+  // ONLY from `metadata`, so a hostile getter/Proxy cannot present the signed
+  // values to the signature check and different, unsigned values to the caller (a
+  // nested property-read TOCTOU). This extends the single-read invariant stated at
+  // the top of this function to the nested metadata object, not just the
+  // top-level fields. (Flagged cross-vendor: the security review and Codex.)
+  const md = metadataValue as Record<string, unknown>;
+  const metadata: ScholarMetadata = {
+    name: md["name"] as string,
+    body: md["body"] as string,
+    role: md["role"] as string,
+    date: md["date"] as string,
+  };
+  // Re-validate the SNAPSHOT, not just the raw value: the bytes we sign-check and
+  // return must be exactly the bytes we validated. A getter that showed valid data
+  // to the check above but yields different values into the snapshot is caught here
+  // (closing the getter-based validation bypass), so validated ≡ signed ≡ returned.
+  const snapshotError = validateMetadata(metadata);
+  if (snapshotError !== null) fail("claim_invalid", snapshotError);
 
   // 1. Binding: the attestation must be bound to the rule pack the caller asked
   // about. A mismatch is a CLAIM defect (the signature may be perfectly valid

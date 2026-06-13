@@ -130,6 +130,62 @@ describe("create → verify round-trip (the certified-path machinery)", () => {
   });
 });
 
+describe("nested metadata is bound to the signature (property-read TOCTOU)", () => {
+  it("returns the SIGNED metadata even when the input uses hostile getters", () => {
+    // A hostile metadata object whose `name` getter yields the genuinely-signed
+    // value during validation + signature reconstruction, then a FORGED value on
+    // a later (return) read. A verifier that re-reads the nested field would
+    // verify the honest claim yet hand back unsigned, forged metadata. The
+    // single-read snapshot in verifyScholarAttestation defeats this: what it
+    // returns is exactly the bytes the signature covered. (On the unfixed path
+    // `name` is read three times — validate, claimBytes, return — so the third
+    // read is forged; the snapshot reduces it to two honest reads.)
+    const FORGED = "FORGED — never signed by this scholar";
+    let nameReads = 0;
+    const hostileMeta: Record<string, unknown> = {
+      get name() {
+        nameReads += 1;
+        return nameReads >= 3 ? FORGED : metadata.name;
+      },
+      body: metadata.body,
+      role: metadata.role,
+      date: metadata.date,
+    };
+    const hostile = { ...genuine, metadata: hostileMeta } as unknown as ScholarAttestation;
+    const verified = verifyScholarAttestation(hostile, PACK_HASH);
+    expect(verified.metadata.name).toBe(metadata.name);
+    expect(verified.metadata.name).not.toBe(FORGED);
+    expect(verified.metadata).toEqual(metadata);
+  });
+
+  it("rejects a getter that passes validation then yields an UNVALIDATED value into the snapshot", () => {
+    // The validation read sees a valid string; the snapshot read (the value that
+    // actually gets signature-reconstructed and returned) sees a non-string. The
+    // snapshot must be re-validated, so this is rejected as claim_invalid — never
+    // returned as signature-bound-but-unvalidated metadata (the bypass Codex's
+    // re-check surfaced: the snapshot was signature-bound but not schema-checked).
+    let nameReads = 0;
+    const hostileMeta: Record<string, unknown> = {
+      get name() {
+        nameReads += 1;
+        return nameReads === 1 ? metadata.name : (7 as unknown as string);
+      },
+      body: metadata.body,
+      role: metadata.role,
+      date: metadata.date,
+    };
+    const hostile = { ...genuine, metadata: hostileMeta } as unknown as ScholarAttestation;
+    let caught: unknown;
+    try {
+      verifyScholarAttestation(hostile, PACK_HASH);
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(ScholarAttestationError);
+    expect((caught as ScholarAttestationError).code).toBe("claim_invalid");
+  });
+});
+
 describe("tampering is detected — the whole claim is bound by the signature", () => {
   it("a tampered rule_pack_hash (re-signed over a DIFFERENT pack) → claim_invalid against the expected pack", () => {
     // An attestation legitimately signed over OTHER_PACK_HASH cannot stand in for
